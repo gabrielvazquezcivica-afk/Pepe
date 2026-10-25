@@ -1,6 +1,10 @@
 
 import axios from 'axios'
-import { sendButtons } from 'baileys-buttons'
+import {
+  generateWAMessageFromContent,
+  prepareWAMessageMedia,
+  proto
+} from '@whiskeysockets/baileys'
 
 const API_URL = 'https://api-faa.my.id/faa/ytplay'
 
@@ -33,8 +37,7 @@ handler.run = async (sock, m, args = []) => {
     const song = data?.result
 
     if (!data?.status || !song?.mp3) {
-      await m.reply('❌ No se encontró la canción.')
-      return
+      return m.reply('❌ No se encontró la canción.')
     }
 
     const title = song.title || query
@@ -52,79 +55,113 @@ handler.run = async (sock, m, args = []) => {
       .toLocaleString('es-MX')
 
     const caption =
-      '🐸 *PEPE BOT — RESULTADO*\n\n' +
-      `🎵 *Título:* ${title}\n` +
-      `👤 *Artista:* ${author}\n` +
-      `⏱️ *Duración:* ${duration}\n` +
-      `👁️ *Vistas:* ${views}\n\n` +
+      `🎵 Título: ${title}\n` +
+      `👤 Artista: ${author}\n` +
+      `⏱️ Duración: ${duration}\n` +
+      `👁️ Vistas: ${views}\n\n` +
       '👇 Selecciona el formato que deseas descargar.'
 
-    // Primero enviamos la ficha normal.
-    if (song.thumbnail) {
-      try {
-        await sock.sendMessage(chat, {
-          image: { url: song.thumbnail },
-          caption
-        }, { quoted: m })
-      } catch (error) {
-        console.log(
-          '[PLAY] No se pudo enviar miniatura:',
-          error.message
-        )
-
-        await sock.sendMessage(chat, {
-          text: caption
-        }, { quoted: m })
-      }
-    } else {
-      await sock.sendMessage(chat, {
-        text: caption
-      }, { quoted: m })
-    }
-
-    // Construimos los botones de respuesta rápida.
     const buttons = [
       {
-        id: `.playaudio ${song.mp3}`,
-        displayText: '🎵 Descargar audio MP3'
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          display_text: '🎵 Descargar audio MP3',
+          id: `.playaudio ${song.mp3}`
+        })
       }
     ]
 
     if (song.url) {
       buttons.push({
-        id: `.playmp4 ${song.url}`,
-        displayText: '🎬 Descargar video MP4'
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          display_text: '🎬 Descargar video MP4',
+          id: `.playmp4 ${song.url}`
+        })
       })
     }
 
-    console.log('[PLAY] Enviando menú de botones...')
-
-    await sendButtons(sock, chat, {
+    let header = proto.Message.InteractiveMessage.Header.create({
       title: '🐸 PEPE BOT',
-      text: '¿Qué deseas descargar?',
-      footer: 'PEPE BOT • Descargas',
-      buttons,
-      quoted: m
+      hasMediaAttachment: false
     })
 
-    console.log('[PLAY] Menú enviado; comprueba WhatsApp.')
+    if (song.thumbnail) {
+      try {
+        const media = await prepareWAMessageMedia(
+          { image: { url: song.thumbnail } },
+          {
+            upload: sock.waUploadToServer,
+            logger: sock.logger,
+            jid: chat
+          }
+        )
+
+        header = proto.Message.InteractiveMessage.Header.create({
+          title: '🐸 PEPE BOT',
+          hasMediaAttachment: true,
+          imageMessage: media.imageMessage
+        })
+      } catch (error) {
+        console.error(
+          '[PLAY] Error preparando miniatura:',
+          error.message
+        )
+      }
+    }
+
+    const message = {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2
+          },
+          interactiveMessage:
+            proto.Message.InteractiveMessage.create({
+              header,
+              body: proto.Message.InteractiveMessage.Body.create({
+                text: caption
+              }),
+              footer: proto.Message.InteractiveMessage.Footer.create({
+                text: 'PEPE BOT • Descargas'
+              }),
+              nativeFlowMessage:
+                proto.Message.InteractiveMessage.NativeFlowMessage.create({
+                  buttons
+                })
+            })
+        }
+      }
+    }
+
+    const generated = generateWAMessageFromContent(
+      chat,
+      message,
+      {
+        quoted: m,
+        userJid: sock.user?.id
+      }
+    )
+
+    await sock.relayMessage(chat, generated.message, {
+      messageId: generated.key.id
+    })
+
+    console.log('[PLAY] Ficha interactiva enviada.')
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
     }).catch(() => {})
 
   } catch (error) {
-    console.error(
-      '[PLAY ERROR]',
-      error?.stack || error
-    )
+    console.error('[PLAY ERROR]', error?.stack || error)
 
     await sock.sendMessage(chat, {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
-    let message =
-      '❌ No se pudo procesar la búsqueda.'
+    let message = '❌ No se pudo procesar la búsqueda.'
 
     if (
       error.code === 'ECONNABORTED' ||
