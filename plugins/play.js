@@ -1,4 +1,3 @@
-
 import axios from 'axios'
 import {
   generateWAMessageFromContent,
@@ -15,7 +14,11 @@ handler.run = async (sock, m, args = []) => {
   const query = args.join(' ').trim()
 
   if (!query) {
-    return m.reply('🎵 Escribe una canción. Ejemplo: .play IMU')
+    return m.reply(
+      '🐸 *PEPE BOT*\n\n' +
+      '🎵 Escribe el nombre de una canción.\n\n' +
+      '📌 Ejemplo: .play IMU'
+    )
   }
 
   try {
@@ -38,23 +41,24 @@ handler.run = async (sock, m, args = []) => {
 
     const title = song.title || query
     const author = song.author || 'Desconocido'
-    const duration = song.duration_timestamp || 'Desconocida'
+    const duration =
+      song.duration_timestamp || song.duration || 'Desconocida'
     const views = Number(song.views || 0).toLocaleString('es-MX')
 
     const caption =
-      `🐸 *PEPE BOT — RESULTADO*\n\n` +
+      '🐸 *PEPE BOT — RESULTADO*\n\n' +
       `🎵 *Título:* ${title}\n` +
       `👤 *Artista:* ${author}\n` +
       `⏱️ *Duración:* ${duration}\n` +
       `👁️ *Vistas:* ${views}\n\n` +
-      `👇 Selecciona qué deseas descargar.`
+      '👇 *Selecciona qué deseas descargar.*'
 
     const buttons = [
       {
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
           display_text: '🎵 Descargar audio',
-          id: `.playaudio ${song.mp3}`
+          id: 'playaudio'
         })
       }
     ]
@@ -64,7 +68,7 @@ handler.run = async (sock, m, args = []) => {
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
           display_text: '🎬 Descargar video',
-          id: `.playmp4 ${song.url}`
+          id: 'playmp4'
         })
       })
     }
@@ -74,42 +78,40 @@ handler.run = async (sock, m, args = []) => {
       hasMediaAttachment: false
     })
 
-    // La miniatura es opcional: si falla, el menú todavía se envía.
     if (song.thumbnail) {
       try {
-        const image = await Promise.race([
-          generateWAMessageContent(
-            { image: { url: song.thumbnail } },
-            { upload: sock.waUploadToServer }
-          ),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Tiempo agotado al cargar miniatura')), 15000)
-          )
-        ])
+        const image = await generateWAMessageContent(
+          { image: { url: song.thumbnail } },
+          { upload: sock.waUploadToServer }
+        )
 
         header = proto.Message.InteractiveMessage.Header.create({
           title: '🎧 Canción encontrada',
           hasMediaAttachment: true,
           imageMessage: image.imageMessage
         })
-      } catch (err) {
-        console.log('[PLAY] Miniatura omitida:', err.message)
+      } catch (error) {
+        console.log(
+          '[PLAY] No se pudo cargar la miniatura:',
+          error.message
+        )
       }
     }
 
-    const interactive = proto.Message.InteractiveMessage.create({
-      header,
-      body: proto.Message.InteractiveMessage.Body.create({
-        text: caption
-      }),
-      footer: proto.Message.InteractiveMessage.Footer.create({
-        text: 'PEPE BOT • Descargas'
-      }),
-      nativeFlowMessage:
-        proto.Message.InteractiveMessage.NativeFlowMessage.create({
-          buttons
-        })
-    })
+    const interactive =
+      proto.Message.InteractiveMessage.create({
+        header,
+        body: proto.Message.InteractiveMessage.Body.create({
+          text: caption
+        }),
+        footer: proto.Message.InteractiveMessage.Footer.create({
+          text: 'PEPE BOT • Descargas'
+        }),
+        nativeFlowMessage:
+          proto.Message.InteractiveMessage.NativeFlowMessage.create({
+            buttons
+          })
+      })
 
     const message = generateWAMessageFromContent(
       chat,
@@ -125,36 +127,34 @@ handler.run = async (sock, m, args = []) => {
         }
       },
       {
-        userJid: sock.user?.id
+        userJid: sock.user.id
       }
     )
 
-    console.log('[PLAY] Enviando ficha de prueba...')
+    console.log('[PLAY] Enviando ficha interactiva...')
 
-await sock.sendMessage(chat, {
-  image: song.thumbnail
-    ? { url: song.thumbnail }
-    : undefined,
-  caption
-}, { quoted: m })
+    await sock.relayMessage(chat, message.message, {
+      messageId: message.key.id
+    })
 
-console.log('[PLAY] Ficha normal enviada.')
-
-    console.log('[PLAY] Ficha enviada.')
+    console.log('[PLAY] Ficha interactiva enviada.')
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
     }).catch(() => {})
 
   } catch (error) {
-    console.error('[PLAY ERROR]', error?.stack || error)
+    console.error(
+      '[PLAY ERROR]',
+      error?.stack || error
+    )
 
     await sock.sendMessage(chat, {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
     await m.reply(
-      '❌ No se pudo enviar la ficha. Revisa la consola de Termux.'
+      '❌ No se pudo enviar la ficha. Intenta de nuevo.'
     ).catch(() => {})
   }
 }
