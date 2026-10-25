@@ -1,0 +1,17 @@
+{
+  "name": "pepe-bot",
+  "version": "1.0.0",
+  "description": "🐸 PEPE BOT - WhatsApp Bot",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "chalk": "^5.4.1",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
