@@ -1,118 +1,178 @@
 
-const handler = {
-    command: ['play'],
+import axios from 'axios'
+import { generateWAMessageContent } from '@whiskeysockets/baileys'
 
-    run: async (sock, m, args) => {
-        const query = args.join(' ').trim()
-        const prefix = '.'
+const API_URL = 'https://api-faa.my.id/faa/ytplay'
 
-        if (!query) {
-            return m.reply('❗ Ejemplo: .play Table Dance')
-        }
+const handler = {}
 
-        let timer
+handler.run = async (sock, m, args = []) => {
+  const from = m.key.remoteJid
+  const query = args.join(' ').trim()
 
-        try {
-            const api =
-                'https://api-faa.my.id/faa/ytplay?query=' +
-                encodeURIComponent(query)
+  if (!query) {
+    return sock.sendMessage(from, {
+      text: '🎵 *ESCRIBE EL NOMBRE DE LA CANCIÓN*\n\n> Ejemplo: .play IMU'
+    }, { quoted: m })
+  }
 
-            const response = await Promise.race([
-                fetch(api),
-                new Promise((_, reject) => {
-                    timer = setTimeout(
-                        () => reject(new Error('La API tardó demasiado')),
-                        15000
-                    )
-                })
-            ])
+  try {
+    await sock.sendMessage(from, {
+      react: { text: '🔎', key: m.key }
+    }).catch(() => {})
 
-            clearTimeout(timer)
+    // Buscar usando la API original que ya funciona
+    const response = await axios.get(API_URL, {
+      params: { query },
+      timeout: 60000
+    })
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`)
-            }
+    const data = response.data
+    const song = data?.result
 
-            const data = await response.json()
-            const video = data.result
-
-            if (!data.status || !video?.url || !video?.mp3) {
-                throw new Error('No se encontró el resultado.')
-            }
-
-            const chat = m.chat || m.key.remoteJid
-
-            // Obtener la miniatura para mostrarla en la ficha.
-            const { generateWAMessageContent } =
-                await import('@whiskeysockets/baileys')
-
-            const { imageMessage } = await generateWAMessageContent(
-                { image: { url: video.thumbnail } },
-                { upload: sock.waUploadToServer }
-            )
-
-            const body =
-                `🐸 *𝐏𝐄𝐏𝐄 𝐁𝐎𝐓*\n\n` +
-                `🎵 *${video.title}*\n\n` +
-                `👤 Artista: ${video.author || 'Desconocido'}\n` +
-                `⏱️ Duración: ${video.duration_timestamp || 'N/A'}\n` +
-                `👁️ Vistas: ${Number(video.views || 0).toLocaleString('es-MX')}\n\n` +
-                `📥 Selecciona audio o video:`
-
-            const msg = {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2
-                        },
-                        interactiveMessage: {
-                            body: { text: body },
-                            footer: { text: '🐸 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓' },
-                            header: {
-                                hasMediaAttachment: true,
-                                imageMessage
-                            },
-                            nativeFlowMessage: {
-                                buttons: [{
-                                    name: 'single_select',
-                                    buttonParamsJson: JSON.stringify({
-                                        title: '📥 ELEGIR FORMATO',
-                                        sections: [{
-                                            title: 'DESCARGAS',
-                                            rows: [
-                                                {
-                                                    title: '🎧 Descargar audio MP3',
-                                                    description: 'Audio de la canción',
-                                                    id: `${prefix}playaudio ${video.url}`
-                                                },
-                                                {
-                                                    title: '🎬 Descargar video MP4',
-                                                    description: 'Video de la canción',
-                                                    id: `${prefix}playmp4 ${video.url}`
-                                                }
-                                            ]
-                                        }]
-                                    })
-                                }]
-                            }
-                        }
-                    }
-                }
-            }
-
-            await sock.relayMessage(
-                chat,
-                msg.viewOnceMessage.message,
-                {}
-            )
-
-        } catch (error) {
-            clearTimeout(timer)
-            console.error('[PEPE PLAY]', error)
-            await m.reply(`❌ Error en Play: ${error.message || error}`)
-        }
+    if (!data?.status || !song?.mp3) {
+      throw new Error('No se encontró la canción o el MP3')
     }
+
+    const title = song.title || query
+    const author = song.author || 'Desconocido'
+
+    const duration = song.duration_timestamp ||
+      (typeof song.duration === 'number'
+        ? `${Math.floor(song.duration / 60)}:${String(
+            song.duration % 60
+          ).padStart(2, '0')}`
+        : 'Desconocida')
+
+    const views = Number(song.views || 0).toLocaleString('es-MX')
+    const videoUrl = song.url || ''
+
+    const caption =
+      '╭━━━〔 🐸 PEPE BOT 〕━━━╮\n' +
+      `│ 🎵 Título: ${title}\n` +
+      `│ 👤 Artista: ${author}\n` +
+      `│ ⏱️ Duración: ${duration}\n` +
+      `│ 👁️ Vistas: ${views}\n` +
+      '╰━━━━━━━━━━━━━━━━━━╯\n\n' +
+      '👇 *SELECCIONA EL FORMATO QUE DESEAS*'
+
+    const rows = [
+      {
+        header: '🎵 AUDIO',
+        title: 'Descargar MP3',
+        description: 'Obtener la canción en audio',
+        id: `.playaudio ${song.mp3}`
+      }
+    ]
+
+    if (videoUrl) {
+      rows.push({
+        header: '🎬 VIDEO',
+        title: 'Descargar MP4',
+        description: 'Obtener el video de YouTube',
+        id: `.playmp4 ${videoUrl}`
+      })
+    }
+
+    const interactiveMessage = {
+      body: { text: caption },
+      footer: { text: '🐸 PEPE BOT • Descargas' },
+      header: {
+        title: '🎧 Resultado encontrado',
+        hasMediaAttachment: false
+      },
+      nativeFlowMessage: {
+        buttons: [
+          {
+            name: 'single_select',
+            buttonParamsJson: JSON.stringify({
+              title: '📥 Elegir formato',
+              sections: [
+                {
+                  title: 'Opciones de descarga',
+                  rows
+                }
+              ]
+            })
+          }
+        ]
+      }
+    }
+
+    // Intentar añadir la miniatura sin bloquear el menú
+    if (song.thumbnail) {
+      try {
+        const imageContent = await Promise.race([
+          generateWAMessageContent(
+            { image: { url: song.thumbnail } },
+            { upload: sock.waUploadToServer }
+          ),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Tiempo de espera de miniatura agotado')),
+              15000
+            )
+          )
+        ])
+
+        interactiveMessage.header = {
+          title: '🎧 Resultado encontrado',
+          hasMediaAttachment: true,
+          imageMessage: imageContent.imageMessage
+        }
+      } catch (imageError) {
+        console.error('[PLAY THUMBNAIL]', imageError.message)
+      }
+    }
+
+    await sock.relayMessage(
+      from,
+      {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2
+            },
+            interactiveMessage
+          }
+        }
+      },
+      {}
+    )
+
+    await sock.sendMessage(from, {
+      react: { text: '✅', key: m.key }
+    }).catch(() => {})
+
+  } catch (error) {
+    console.error(
+      '[PLAY]',
+      error.response?.status || error.code || error.message
+    )
+
+    await sock.sendMessage(from, {
+      react: { text: '❌', key: m.key }
+    }).catch(() => {})
+
+    let message = '❌ *NO SE PUDO BUSCAR LA CANCIÓN. INTENTA MÁS TARDE.*'
+
+    if (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT'
+    ) {
+      message = '⏳ *LA API TARDÓ DEMASIADO. INTENTA DE NUEVO.*'
+    }
+
+    await sock.sendMessage(from, {
+      text: message
+    }, { quoted: m }).catch(() => {})
+  }
 }
+
+handler.command = ['play', 'mp3', 'musica']
+handler.help = ['play <canción>']
+handler.tags = ['descargas']
+handler.menu = true
 
 export default handler
