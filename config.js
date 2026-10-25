@@ -1,5 +1,5 @@
 const config = {
-    BOT_NAME: '𝐓𝐈𝐁𝐔 𝐁𝐎𝐓',
+    BOT_NAME: 'PEPE BOT',
     OWNER_NAME: '𝐒𝐨𝐲𝐆𝐚𝐛𝐨',
 
     // Números de dueños
