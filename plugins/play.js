@@ -133,9 +133,16 @@ handler.run = async (sock, m, args = []) => {
 
     console.log('[PLAY] Enviando ficha interactiva...')
 
-    await sock.relayMessage(chat, message.message, {
-      messageId: message.key.id
-    })
+    await sock.sendMessage(
+  chat,
+  {
+    image: song.thumbnail
+      ? { url: song.thumbnail }
+      : undefined,
+    caption
+  },
+  { quoted: m }
+)
 
     console.log('[PLAY] Ficha interactiva enviada.')
 
