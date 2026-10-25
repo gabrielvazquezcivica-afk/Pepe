@@ -1,23 +1,27 @@
+
 import { connect } from './lib/connection.js'
+import config from './config.js'
+import { DisconnectReason } from '@whiskeysockets/baileys'
 import fs from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import chalk from 'chalk'
 import pino from 'pino'
 
-// ═══════════════════════════════════
-// 🐸 PEPE BOT - CONFIGURACIÓN
-// ═══════════════════════════════════
-
-const PREFIXES = ['.', '!', '/', '#']
 const PLUGINS_DIR = path.resolve('./plugins')
 const logger = pino({ level: 'silent' })
 
 const plugins = new Map()
 const processedMessages = new Set()
 
+let activeSock = null
+let reconnecting = false
+
+const sleep = ms =>
+    new Promise(resolve => setTimeout(resolve, ms))
+
 // ═══════════════════════════════════
-// 🎨 CONSOLA
+// 🎨 BANNER
 // ═══════════════════════════════════
 
 function banner() {
@@ -32,15 +36,15 @@ function banner() {
 ╚═╝     ╚══════╝╚═╝     ╚══════╝
 `))
 
-    console.log(chalk.cyanBright.bold('       🐸 PEPE BOT'))
-    console.log(chalk.yellowBright('   ⚡ MULTI-COMMAND SYSTEM'))
+    console.log(chalk.cyanBright.bold(`🐸 ${config.botName}`))
+    console.log(chalk.yellowBright(`👑 Owner: ${config.ownerName}`))
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.greenBright('   📡 Sistema de WhatsApp'))
+    console.log(chalk.greenBright('📡 Sistema de WhatsApp'))
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
 // ═══════════════════════════════════
-// 📂 CARGAR TODOS LOS PLUGINS
+// 📂 CARGAR PLUGINS
 // ═══════════════════════════════════
 
 async function loadPlugins() {
@@ -79,9 +83,9 @@ async function loadPlugins() {
                     mod.handler
 
                 if (!handler) {
-                    console.log(
-                        chalk.yellow(`⚠ Sin handler: ${file.name}`)
-                    )
+                    console.log(chalk.yellow(
+                        `⚠ Sin handler: ${file.name}`
+                    ))
                     continue
                 }
 
@@ -122,9 +126,9 @@ async function loadPlugins() {
                     chalk.gray(` (${registered} comandos)`)
                 )
             } catch (error) {
-                console.log(
-                    chalk.red(`✖ Error en ${file.name}: ${error.message}`)
-                )
+                console.log(chalk.red(
+                    `✖ Error en ${file.name}: ${error.message}`
+                ))
             }
         }
     }
@@ -132,9 +136,9 @@ async function loadPlugins() {
     await scan(PLUGINS_DIR)
 
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(
-        chalk.cyanBright(` 🧩 Comandos registrados: ${plugins.size}`)
-    )
+    console.log(chalk.cyanBright(
+        `🧩 Comandos registrados: ${plugins.size}`
+    ))
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
@@ -145,7 +149,6 @@ async function loadPlugins() {
 function unwrapMessage(message) {
     let current = message
 
-    // Desenvolver mensajes temporales o de una sola vista
     for (let i = 0; i < 5; i++) {
         const next =
             current?.ephemeralMessage?.message ||
@@ -163,31 +166,24 @@ function unwrapMessage(message) {
 function getMessageText(message) {
     const msg = unwrapMessage(message.message)
 
-    // Mensajes normales
-    if (msg.conversation) {
-        return msg.conversation
-    }
+    if (msg.conversation) return msg.conversation
 
     if (msg.extendedTextMessage?.text) {
         return msg.extendedTextMessage.text
     }
 
-    // Botones clásicos
     if (msg.buttonsResponseMessage?.selectedButtonId) {
         return msg.buttonsResponseMessage.selectedButtonId
     }
 
-    // Botones de plantilla
     if (msg.templateButtonReplyMessage?.selectedId) {
         return msg.templateButtonReplyMessage.selectedId
     }
 
-    // Listas interactivas
     if (msg.listResponseMessage?.singleSelectReply?.selectedRowId) {
         return msg.listResponseMessage.singleSelectReply.selectedRowId
     }
 
-    // Respuestas de botones nativos
     const native =
         msg.interactiveResponseMessage?.nativeFlowResponseMessage
 
@@ -217,18 +213,22 @@ function getMessageText(message) {
 
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
-
-    const sender =
-        message.key.participant ||
-        message.key.remoteJid
+    const sender = message.key.participant || chat
+    const senderNumber = sender.split('@')[0].split(':')[0]
+    const ownerNumber = String(config.ownerNumber)
+        .replace(/\D/g, '')
 
     return {
         ...message,
         chat,
         sender,
+        senderNumber,
         fromMe: Boolean(message.key.fromMe),
         isGroup: chat.endsWith('@g.us'),
+        isOwner: senderNumber === ownerNumber,
         pushName: message.pushName || 'Usuario',
+        botName: config.botName,
+        ownerName: config.ownerName,
         text: getMessageText(message),
 
         reply: (text, options = {}) =>
@@ -248,7 +248,9 @@ function parseCommand(text) {
     if (!text || typeof text !== 'string') return null
 
     const input = text.trim()
-    const prefix = PREFIXES.find(p => input.startsWith(p))
+    const prefix = config.prefixes.find(p =>
+        input.startsWith(p)
+    )
 
     if (!prefix) return null
 
@@ -267,7 +269,7 @@ function parseCommand(text) {
 }
 
 // ═══════════════════════════════════
-// 🖥️ MOSTRAR DATOS EN CONSOLA
+// 🖥️ REGISTRO EN CONSOLA
 // ═══════════════════════════════════
 
 async function logCommand(m, parsed, sock) {
@@ -283,32 +285,23 @@ async function logCommand(m, parsed, sock) {
     }
 
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.greenBright.bold(' 🐸 PEPE BOT | COMANDO'))
+    console.log(chalk.greenBright.bold(`🐸 ${config.botName} | COMANDO`))
+    console.log(chalk.yellow('👤 Usuario: ') + chalk.white(m.pushName))
+    console.log(chalk.cyan('🆔 Remitente: ') + chalk.white(m.sender))
+    console.log(chalk.magenta('👥 Grupo: ') + chalk.white(groupName))
     console.log(
-        chalk.yellow(' 👤 Usuario: ') +
-        chalk.white(m.pushName)
-    )
-    console.log(
-        chalk.cyan(' 🆔 Remitente: ') +
-        chalk.white(m.sender)
-    )
-    console.log(
-        chalk.magenta(' 👥 Grupo: ') +
-        chalk.white(groupName)
-    )
-    console.log(
-        chalk.blueBright(' ⚡ Comando: ') +
+        chalk.blueBright('⚡ Comando: ') +
         chalk.white(`${parsed.prefix}${parsed.command}`)
     )
     console.log(
-        chalk.yellowBright(' 📝 Argumentos: ') +
+        chalk.yellowBright('📝 Argumentos: ') +
         chalk.white(parsed.text || 'Ninguno')
     )
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
 // ═══════════════════════════════════
-// ⚙️ EJECUTAR COMANDOS
+// ⚙️ EJECUTAR PLUGINS
 // ═══════════════════════════════════
 
 async function executePlugin(plugin, m, parsed, sock) {
@@ -323,69 +316,54 @@ async function executePlugin(plugin, m, parsed, sock) {
         usedPrefix: parsed.prefix,
         prefix: parsed.prefix,
         command: parsed.command,
+        isOwner: m.isOwner,
         logger
     }
 
-    // Formato: handler.run(sock, m, args, context)
     if (typeof handler.run === 'function') {
-        return await handler.run(
-            sock,
-            m,
-            parsed.args,
-            context
-        )
+        return handler.run(sock, m, parsed.args, context)
     }
 
-    // Formato: export default async function (m, context)
     if (typeof handler === 'function') {
-        return await handler(m, context)
+        return handler(m, context)
     }
 
-    // Formato: export const handler = async (m, context) => {}
     if (typeof module.handler === 'function') {
-        return await module.handler(m, context)
+        return module.handler(m, context)
     }
 
     throw new Error('El plugin no exporta una función ejecutable')
 }
 
 // ═══════════════════════════════════
-// 📩 PROCESAR MENSAJE
+// 📩 PROCESAR MENSAJES
 // ═══════════════════════════════════
 
 async function processMessage(message, sock) {
-    if (!message?.key?.remoteJid) return
-    if (!message.message) return
+    if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
 
     const chat = message.key.remoteJid
-
-    // Ignorar estados
     if (chat === 'status@broadcast') return
 
     const m = normalizeMessage(message, sock)
     const parsed = parseCommand(m.text)
 
-    // Solo procesar mensajes que sean comandos
     if (!parsed) return
 
     const matches = plugins.get(parsed.command)
-
     if (!matches?.length) return
 
     await logCommand(m, parsed, sock)
 
-    // Ejecutar en el orden de los plugins registrados.
-    // No bloquea los mensajes siguientes.
+    // Los comandos de mensajes distintos pueden ejecutarse simultáneamente.
     for (const plugin of matches) {
         try {
             await executePlugin(plugin, m, parsed, sock)
         } catch (error) {
-            console.error(
-                chalk.redBright(
-                    `❌ Error en ${parsed.prefix}${parsed.command}: ${error.message}`
-                )
-            )
+            console.error(chalk.redBright(
+                `❌ Error en ${parsed.prefix}${parsed.command}: ${error.message}`
+            ))
 
             try {
                 await m.reply(
@@ -397,32 +375,22 @@ async function processMessage(message, sock) {
 }
 
 // ═══════════════════════════════════
-// 🚀 INICIAR BOT
+// 🔌 SOCKET Y RECONEXIÓN
 // ═══════════════════════════════════
 
-async function start() {
-    banner()
+async function attachSocket(sock) {
+    activeSock = sock
 
-    await loadPlugins()
-
-    const sock = await connect()
-
-    // Solo mensajes nuevos notificados por WhatsApp.
-    // Cada mensaje se procesa de manera independiente.
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-        if (type !== 'notify') return
+        if (sock !== activeSock || type !== 'notify') return
 
         for (const message of messages) {
-            if (!message?.key?.id) continue
-            if (message.key.fromMe) continue
+            if (!message?.key?.id || message.key.fromMe) continue
 
             const chat = message.key.remoteJid
-
             if (!chat || chat === 'status@broadcast') continue
 
-            // Evitar duplicados dentro de esta ejecución
             const id = `${chat}:${message.key.id}`
-
             if (processedMessages.has(id)) continue
 
             processedMessages.add(id)
@@ -432,29 +400,75 @@ async function start() {
                 processedMessages.delete(oldest)
             }
 
-            // No usar await aquí:
-            // permite que otros comandos comiencen sin esperar este.
             processMessage(message, sock).catch(error => {
-                console.error(
-                    chalk.redBright(
-                        `❌ Error procesando mensaje: ${error.message}`
-                    )
-                )
+                console.error(chalk.red(
+                    `❌ Error procesando mensaje: ${error.message}`
+                ))
             })
         }
     })
 
-    console.log(
-        chalk.greenBright.bold(
-            '\n✅ PEPE BOT está escuchando mensajes nuevos.\n'
-        )
-    )
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+        if (sock !== activeSock || connection !== 'close') return
+        if (reconnecting) return
+
+        const reason = lastDisconnect?.error?.output?.statusCode
+
+        console.log(chalk.yellow(
+            `⚠️ Conexión cerrada. Código: ${reason ?? 'desconocido'}`
+        ))
+
+        if (
+            reason === 401 ||
+            reason === DisconnectReason.loggedOut
+        ) {
+            console.log(chalk.red(
+                '❌ Sesión rechazada. Revisa la vinculación antes de volver a intentarlo.'
+            ))
+            return
+        }
+
+        reconnecting = true
+
+        try {
+            await sleep(reason === 515 ? 1500 : 3000)
+
+            if (sock !== activeSock) return
+
+            console.log(chalk.cyan('🔄 Intentando reconectar...'))
+
+            const newSock = await connect()
+            await attachSocket(newSock)
+
+            console.log(chalk.green('✅ Socket nuevo registrado.'))
+        } catch (error) {
+            console.error(
+                chalk.red('❌ Error al reconectar:'),
+                error?.message || error
+            )
+        } finally {
+            reconnecting = false
+        }
+    })
+}
+
+// ═══════════════════════════════════
+// 🚀 INICIO
+// ═══════════════════════════════════
+
+async function start() {
+    banner()
+    await loadPlugins()
+
+    const sock = await connect()
+    await attachSocket(sock)
+
+    console.log(chalk.greenBright.bold(
+        `\n✅ ${config.botName} está escuchando mensajes nuevos.\n`
+    ))
 }
 
 start().catch(error => {
-    console.error(
-        chalk.redBright('❌ Error iniciando PEPE BOT:'),
-        error
-    )
+    console.error(chalk.redBright('❌ Error iniciando el bot:'), error)
     process.exitCode = 1
 })
