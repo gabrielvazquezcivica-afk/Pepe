@@ -1,47 +1,44 @@
 
-import yts from 'yt-search'
-import { generateWAMessageContent } from '@whiskeysockets/baileys'
-
 const handler = {
     command: ['play'],
 
-    run: async (sock, m, args, context) => {
-        const text = args.join(' ').trim()
+    run: async (sock, m, args) => {
+        const query = args.join(' ').trim()
 
-        if (!text) {
+        if (!query) {
             return m.reply(
-                '❗ Escribe el nombre de la canción o video.\n\n' +
-                'Ejemplo: .play Bad Bunny'
+                '❗ Escribe el nombre de una canción o video.\n\n' +
+                'Ejemplo: .play La Santa Grifa'
             )
         }
 
         try {
-            await m.reply('🔎 Buscando resultados...')
+            await m.reply('🔎 PEPE BOT está buscando tu canción...')
 
-            const result = await yts(text)
-            const video = result.all?.[0]
+            const api =
+                'https://api-faa.my.id/faa/ytplay?query=' +
+                encodeURIComponent(query)
 
-            if (!video) {
-                return m.reply('❌ No encontré resultados.')
+            const response = await fetch(api)
+            if (!response.ok) {
+                throw new Error(`Error HTTP ${response.status} en la API`)
             }
 
-            const sender = m.sender || m.key?.participant || m.key?.remoteJid
-            const chat = m.chat || m.key?.remoteJid
-            const prefix = '.'
+            const data = await response.json()
+            const video = data.result
 
+            if (!data.status || !video?.url || !video?.mp3) {
+                throw new Error('La API no devolvió un resultado válido.')
+            }
+
+            const chat = m.chat || m.key.remoteJid
             const body =
-                `🎵 *TIBU BOT — PLAY*\n\n` +
-                `Hola @${sender.split('@')[0]} 👋\n\n` +
-                `📌 *Resultado encontrado:*\n` +
-                `🎶 *Título:* ${video.title}\n` +
-                `⏱️ *Duración:* ${video.timestamp || 'Desconocida'}\n` +
-                `👤 *Canal:* ${video.author?.name || 'Desconocido'}\n\n` +
-                `Selecciona el formato que deseas descargar:`
-
-            const { imageMessage } = await generateWAMessageContent(
-                { image: { url: video.thumbnail } },
-                { upload: sock.waUploadToServer }
-            )
+                `🐸 *𝐏𝐄𝐏𝐄 𝐁𝐎𝐓*\n\n` +
+                `🎵 *${video.title}*\n\n` +
+                `👤 *Artista:* ${video.author || 'Desconocido'}\n` +
+                `⏱️ *Duración:* ${video.duration_timestamp || 'Desconocida'}\n` +
+                `👁️ *Vistas:* ${Number(video.views || 0).toLocaleString('es-MX')}\n\n` +
+                `📥 Selecciona el formato que deseas:`
 
             const msg = {
                 viewOnceMessage: {
@@ -52,83 +49,57 @@ const handler = {
                         },
                         interactiveMessage: {
                             body: { text: body },
-                            footer: {
-                                text: '🌊 𝐓𝐈𝐁𝐔 𝐁𝐎𝐓 🦈'
-                            },
-                            header: {
-                                hasMediaAttachment: true,
-                                imageMessage
-                            },
-                            contextInfo: {
-                                mentionedJid: [sender]
-                            },
+                            footer: { text: '🐸 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓' },
+                            header: { title: '🎶 PLAY' },
                             nativeFlowMessage: {
-                                buttons: [
-                                    {
-                                        name: 'single_select',
-                                        buttonParamsJson: JSON.stringify({
-                                            title: '📥 ELEGIR FORMATO',
-                                            sections: [
-                                                {
-                                                    title: '🎧 AUDIO',
-                                                    rows: [
-                                                        {
-                                                            title: '🎵 Descargar MP3',
-                                                            description: 'Audio en formato MP3',
-                                                            id: `${prefix}ytmp3 ${video.url}`
-                                                        },
-                                                        {
-                                                            title: '📄 MP3 como documento',
-                                                            description: 'Audio enviado como archivo',
-                                                            id: `${prefix}ytmp3doc ${video.url}`
-                                                        }
-                                                    ]
-                                                },
-                                                {
-                                                    title: '🎬 VIDEO',
-                                                    rows: [
-                                                        {
-                                                            title: '📹 Descargar MP4',
-                                                            description: 'Video en formato MP4',
-                                                            id: `${prefix}ytmp4 ${video.url}`
-                                                        },
-                                                        {
-                                                            title: '📄 MP4 como documento',
-                                                            description: 'Video enviado como archivo',
-                                                            id: `${prefix}ytmp4doc ${video.url}`
-                                                        }
-                                                    ]
-                                                },
-                                                {
-                                                    title: 'ℹ️ INFORMACIÓN',
-                                                    rows: [
-                                                        {
-                                                            title: '🔗 Abrir en YouTube',
-                                                            description: 'Ver el video original',
-                                                            id: `${prefix}ytlink ${video.url}`
-                                                        }
-                                                    ]
-                                                }
-                                            ]
-                                        })
-                                    }
-                                ]
+                                buttons: [{
+                                    name: 'single_select',
+                                    buttonParamsJson: JSON.stringify({
+                                        title: '📥 ELEGIR FORMATO',
+                                        sections: [
+                                            {
+                                                title: '🎧 AUDIO',
+                                                rows: [
+                                                    {
+                                                        title: '🎵 Descargar MP3',
+                                                        description: 'Audio',
+                                                        id: `.playaudio ${video.url}`
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                title: '🎬 VIDEO',
+                                                rows: [
+                                                    {
+                                                        title: '📹 Descargar MP4',
+                                                        description: 'Video',
+                                                        id: `.playmp4 ${video.url}`
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                title: 'ℹ️ INFORMACIÓN',
+                                                rows: [{
+                                                    title: '🔗 Abrir en YouTube',
+                                                    description: 'Ver video original',
+                                                    id: `.playlink ${video.url}`
+                                                }]
+                                            }
+                                        ]
+                                    })
+                                }]
                             }
                         }
                     }
                 }
             }
 
-            await sock.relayMessage(
-                chat,
-                msg.viewOnceMessage.message,
-                { messageId: undefined }
-            )
+            await sock.relayMessage(chat, msg.viewOnceMessage.message, {})
 
-        } catch (e) {
-            console.error('Error en comando play:', e)
+        } catch (error) {
+            console.error('[PEPE PLAY]', error)
             await m.reply(
-                `❌ No pude generar el menú.\n\n${e.message || e}`
+                `❌ Error en Play:\n${error.message || error}`
             )
         }
     }
