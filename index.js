@@ -339,6 +339,7 @@ async function executePlugin(plugin, m, parsed, sock) {
 // 📩 PROCESAR MENSAJES
 // ═══════════════════════════════════
 
+
 async function processMessage(message, sock) {
     if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
@@ -347,8 +348,27 @@ async function processMessage(message, sock) {
     if (chat === 'status@broadcast') return
 
     const m = normalizeMessage(message, sock)
-    const parsed = parseCommand(m.text)
 
+    // Ignorar mensajes normales sin prefijo.
+    if (!m.text || typeof m.text !== 'string') return
+
+    const prefixes = config.prefixes
+
+    if (!Array.isArray(prefixes)) {
+        console.error('❌ Revisa prefixes en config.js')
+        return
+    }
+
+    const input = m.text.trim()
+
+    // Si no comienza con un prefijo válido, no hacer nada.
+    if (!prefixes.some(prefix =>
+        typeof prefix === 'string' &&
+        prefix.length > 0 &&
+        input.startsWith(prefix)
+    )) return
+
+    const parsed = parseCommand(input)
     if (!parsed) return
 
     const matches = plugins.get(parsed.command)
@@ -356,14 +376,14 @@ async function processMessage(message, sock) {
 
     await logCommand(m, parsed, sock)
 
-    // Los comandos de mensajes distintos pueden ejecutarse simultáneamente.
     for (const plugin of matches) {
         try {
             await executePlugin(plugin, m, parsed, sock)
         } catch (error) {
-            console.error(chalk.redBright(
-                `❌ Error en ${parsed.prefix}${parsed.command}: ${error.message}`
-            ))
+            console.error(
+                `❌ Error en ${parsed.prefix}${parsed.command}:`,
+                error
+            )
 
             try {
                 await m.reply(
@@ -373,6 +393,7 @@ async function processMessage(message, sock) {
         }
     }
 }
+
 
 // ═══════════════════════════════════
 // 🔌 SOCKET Y RECONEXIÓN
