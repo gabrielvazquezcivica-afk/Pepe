@@ -1,4 +1,6 @@
+
 import axios from 'axios'
+import { sendButtons } from 'baileys-buttons'
 
 const API_URL = 'https://api-faa.my.id/faa/ytplay'
 
@@ -12,7 +14,7 @@ handler.run = async (sock, m, args = []) => {
     return m.reply(
       '🐸 *PEPE BOT*\n\n' +
       '🎵 Escribe el nombre de una canción.\n\n' +
-      '📌 Ejemplo: .play IMU'
+      'Ejemplo: .play IMU'
     )
   }
 
@@ -46,7 +48,8 @@ handler.run = async (sock, m, args = []) => {
           ).padStart(2, '0')}`
         : 'Desconocida')
 
-    const views = Number(song.views || 0).toLocaleString('es-MX')
+    const views = Number(song.views || 0)
+      .toLocaleString('es-MX')
 
     const caption =
       '🐸 *PEPE BOT — RESULTADO*\n\n' +
@@ -54,51 +57,57 @@ handler.run = async (sock, m, args = []) => {
       `👤 *Artista:* ${author}\n` +
       `⏱️ *Duración:* ${duration}\n` +
       `👁️ *Vistas:* ${views}\n\n` +
-      '👇 *Selecciona el formato de descarga:*'
+      '👇 Selecciona el formato que deseas descargar.'
 
-    // Botones clásicos de WhatsApp
+    // Primero enviamos la ficha normal.
+    if (song.thumbnail) {
+      try {
+        await sock.sendMessage(chat, {
+          image: { url: song.thumbnail },
+          caption
+        }, { quoted: m })
+      } catch (error) {
+        console.log(
+          '[PLAY] No se pudo enviar miniatura:',
+          error.message
+        )
+
+        await sock.sendMessage(chat, {
+          text: caption
+        }, { quoted: m })
+      }
+    } else {
+      await sock.sendMessage(chat, {
+        text: caption
+      }, { quoted: m })
+    }
+
+    // Construimos los botones de respuesta rápida.
     const buttons = [
       {
-        buttonId: `.playaudio ${song.mp3}`,
-        buttonText: {
-          displayText: '🎵 Descargar audio MP3'
-        },
-        type: 1
+        id: `.playaudio ${song.mp3}`,
+        displayText: '🎵 Descargar audio MP3'
       }
     ]
 
     if (song.url) {
       buttons.push({
-        buttonId: `.playmp4 ${song.url}`,
-        buttonText: {
-          displayText: '🎬 Descargar video MP4'
-        },
-        type: 1
+        id: `.playmp4 ${song.url}`,
+        displayText: '🎬 Descargar video MP4'
       })
     }
 
-    const message = {
-      caption,
-      footer: '🐸 PEPE BOT • Descargas',
+    console.log('[PLAY] Enviando menú de botones...')
+
+    await sendButtons(sock, chat, {
+      title: '🐸 PEPE BOT',
+      text: '¿Qué deseas descargar?',
+      footer: 'PEPE BOT • Descargas',
       buttons,
-      headerType: 4
-    }
-
-    if (song.thumbnail) {
-      message.image = { url: song.thumbnail }
-    } else {
-      message.text = caption
-      delete message.caption
-      delete message.headerType
-    }
-
-    console.log('[PLAY] Enviando botones clásicos...')
-
-    await sock.sendMessage(chat, message, {
       quoted: m
     })
 
-    console.log('[PLAY] Mensaje enviado.')
+    console.log('[PLAY] Menú enviado; comprueba WhatsApp.')
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
@@ -107,7 +116,7 @@ handler.run = async (sock, m, args = []) => {
   } catch (error) {
     console.error(
       '[PLAY ERROR]',
-      error?.response?.status || error?.code || error?.message
+      error?.stack || error
     )
 
     await sock.sendMessage(chat, {
@@ -115,13 +124,13 @@ handler.run = async (sock, m, args = []) => {
     }).catch(() => {})
 
     let message =
-      '❌ No se pudo buscar la canción. Intenta de nuevo.'
+      '❌ No se pudo procesar la búsqueda.'
 
     if (
       error.code === 'ECONNABORTED' ||
       error.code === 'ETIMEDOUT'
     ) {
-      message = '⏳ La API tardó demasiado. Intenta más tarde.'
+      message = '⏳ La API tardó demasiado. Intenta de nuevo.'
     } else if (error.response?.status === 429) {
       message = '⏳ La API está recibiendo demasiadas solicitudes.'
     } else if (error.response?.status >= 500) {
