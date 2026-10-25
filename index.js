@@ -17,35 +17,33 @@ const processedMessages = new Set()
 let activeSock = null
 let reconnecting = false
 
-const sleep = ms =>
-    new Promise(resolve => setTimeout(resolve, ms))
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 // 🎨 BANNER
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 
 function banner() {
     console.clear()
 
-    console.log(chalk.greenBright.bold(`
-██████╗ ███████╗██████╗ ███████╗
-██╔══██╗██╔════╝██╔══██╗██╔════╝
-██████╔╝█████╗  ██████╔╝█████╗
-██╔═══╝ ██╔══╝  ██╔═══╝ ██╔══╝
-██║     ███████╗██║     ███████╗
-╚═╝     ╚══════╝╚═╝     ╚══════╝
+    console.log(chalk.cyanBright.bold(`
+████████╗██╗██████╗ ██╗   ██╗
+╚══██╔══╝██║██╔══██╗██║   ██║
+   ██║   ██║██████╔╝██║   ██║
+   ██║   ██║██╔══██╗██║   ██║
+   ██║   ██║██████╔╝╚██████╔╝
+   ╚═╝   ╚═╝╚═════╝  ╚═════╝
 `))
 
-    console.log(chalk.cyanBright.bold(`🐸 ${config.botName}`))
-    console.log(chalk.yellowBright(`👑 Owner: ${config.ownerName}`))
-    console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.greenBright('📡 Sistema de WhatsApp'))
+    console.log(chalk.greenBright.bold(`🐟 ${config.BOT_NAME}`))
+    console.log(chalk.yellowBright(`👑 Owner: ${config.OWNER_NAME}`))
+    console.log(chalk.gray(`⚡ Prefijo: ${config.PREFIX}`))
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 // 📂 CARGAR PLUGINS
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 
 async function loadPlugins() {
     plugins.clear()
@@ -74,8 +72,7 @@ async function loadPlugins() {
             ) continue
 
             try {
-                const url = pathToFileURL(fullPath).href
-                const mod = await import(url)
+                const mod = await import(pathToFileURL(fullPath).href)
 
                 const handler =
                     mod.default ||
@@ -83,9 +80,7 @@ async function loadPlugins() {
                     mod.handler
 
                 if (!handler) {
-                    console.log(chalk.yellow(
-                        `⚠ Sin handler: ${file.name}`
-                    ))
+                    console.log(chalk.yellow(`⚠ Sin handler: ${file.name}`))
                     continue
                 }
 
@@ -96,39 +91,41 @@ async function loadPlugins() {
                     mod.help ??
                     []
 
-                const list = Array.isArray(commands)
+                const commandList = Array.isArray(commands)
                     ? commands
                     : [commands]
 
-                let registered = 0
+                let count = 0
 
-                for (const command of list) {
+                for (const command of commandList) {
                     if (typeof command !== 'string') continue
 
-                    const key = command.toLowerCase()
+                    const name = command.toLowerCase().trim()
+                    if (!name) continue
 
-                    if (!plugins.has(key)) {
-                        plugins.set(key, [])
+                    if (!plugins.has(name)) {
+                        plugins.set(name, [])
                     }
 
-                    plugins.get(key).push({
+                    plugins.get(name).push({
                         handler,
                         module: mod,
                         file: fullPath
                     })
 
-                    registered++
+                    count++
                 }
 
                 console.log(
-                    chalk.green(' ✔ ') +
+                    chalk.green('✔ ') +
                     chalk.white(path.relative(PLUGINS_DIR, fullPath)) +
-                    chalk.gray(` (${registered} comandos)`)
+                    chalk.gray(` (${count} comandos)`)
                 )
             } catch (error) {
-                console.log(chalk.red(
-                    `✖ Error en ${file.name}: ${error.message}`
-                ))
+                console.error(
+                    chalk.red(`❌ Plugin ${file.name}:`),
+                    error.message
+                )
             }
         }
     }
@@ -136,15 +133,13 @@ async function loadPlugins() {
     await scan(PLUGINS_DIR)
 
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.cyanBright(
-        `🧩 Comandos registrados: ${plugins.size}`
-    ))
+    console.log(chalk.cyan(`🧩 Comandos registrados: ${plugins.size}`))
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
-// ═══════════════════════════════════
-// 🔘 LEER MENSAJES Y BOTONES
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// 📨 EXTRAER TEXTO DE MENSAJES
+// ══════════════════════════════════════
 
 function unwrapMessage(message) {
     let current = message
@@ -171,6 +166,10 @@ function getMessageText(message) {
     if (msg.extendedTextMessage?.text) {
         return msg.extendedTextMessage.text
     }
+
+    if (msg.imageMessage?.caption) return msg.imageMessage.caption
+    if (msg.videoMessage?.caption) return msg.videoMessage.caption
+    if (msg.documentMessage?.caption) return msg.documentMessage.caption
 
     if (msg.buttonsResponseMessage?.selectedButtonId) {
         return msg.buttonsResponseMessage.selectedButtonId
@@ -207,28 +206,57 @@ function getMessageText(message) {
     return ''
 }
 
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// 👑 COMPROBAR PROPIETARIO
+// ══════════════════════════════════════
+
+function isOwnerMessage(sender) {
+    const senderId = String(sender || '')
+        .split('@')[0]
+        .split(':')[0]
+
+    const senderDigits = senderId.replace(/\D/g, '')
+
+    const owners = Array.isArray(config.owner)
+        ? config.owner
+        : []
+
+    const ownerLids = Array.isArray(config.ownerLid)
+        ? config.ownerLid
+        : []
+
+    const matchesNumber = owners.some(number => {
+        const normalized = String(number || '').replace(/\D/g, '')
+        return normalized.length > 0 && normalized === senderDigits
+    })
+
+    const matchesLid = ownerLids.some(lid => {
+        const normalized = String(lid || '').trim()
+        return normalized.length > 0 && normalized === senderId
+    })
+
+    return matchesNumber || matchesLid
+}
+
+// ══════════════════════════════════════
 // 📨 NORMALIZAR MENSAJE
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
-    const senderNumber = sender.split('@')[0].split(':')[0]
-    const ownerNumber = String(config.ownerNumber)
-        .replace(/\D/g, '')
 
     return {
         ...message,
         chat,
         sender,
-        senderNumber,
+        senderNumber: sender.split('@')[0].split(':')[0],
         fromMe: Boolean(message.key.fromMe),
         isGroup: chat.endsWith('@g.us'),
-        isOwner: senderNumber === ownerNumber,
+        isOwner: isOwnerMessage(sender),
         pushName: message.pushName || 'Usuario',
-        botName: config.botName,
-        ownerName: config.ownerName,
+        botName: config.BOT_NAME,
+        ownerName: config.OWNER_NAME,
         text: getMessageText(message),
 
         reply: (text, options = {}) =>
@@ -240,19 +268,23 @@ function normalizeMessage(message, sock) {
     }
 }
 
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 // ⚡ DETECTAR COMANDOS
-// ═══════════════════════════════════
+// ══════════════════════════════════════
 
 function parseCommand(text) {
     if (!text || typeof text !== 'string') return null
 
     const input = text.trim()
-    const prefix = config.prefixes.find(p =>
-        input.startsWith(p)
-    )
+    const prefix = config.PREFIX
 
-    if (!prefix) return null
+    if (typeof prefix !== 'string' || !prefix.length) {
+        console.error('❌ Revisa PREFIX en config.js')
+        return null
+    }
+
+    // Solo reconoce el prefijo configurado.
+    if (!input.startsWith(prefix)) return null
 
     const body = input.slice(prefix.length).trim()
     if (!body) return null
@@ -268,9 +300,9 @@ function parseCommand(text) {
     }
 }
 
-// ═══════════════════════════════════
-// 🖥️ REGISTRO EN CONSOLA
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// 🖥️ REGISTRO DE COMANDOS
+// ══════════════════════════════════════
 
 async function logCommand(m, parsed, sock) {
     let groupName = 'Chat privado'
@@ -285,10 +317,10 @@ async function logCommand(m, parsed, sock) {
     }
 
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.greenBright.bold(`🐸 ${config.botName} | COMANDO`))
+    console.log(chalk.greenBright.bold(`🐟 ${config.BOT_NAME} | COMANDO`))
     console.log(chalk.yellow('👤 Usuario: ') + chalk.white(m.pushName))
     console.log(chalk.cyan('🆔 Remitente: ') + chalk.white(m.sender))
-    console.log(chalk.magenta('👥 Grupo: ') + chalk.white(groupName))
+    console.log(chalk.magenta('👥 Chat: ') + chalk.white(groupName))
     console.log(
         chalk.blueBright('⚡ Comando: ') +
         chalk.white(`${parsed.prefix}${parsed.command}`)
@@ -300,9 +332,9 @@ async function logCommand(m, parsed, sock) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
-// ═══════════════════════════════════
-// ⚙️ EJECUTAR PLUGINS
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// ⚙️ EJECUTAR PLUGIN
+// ══════════════════════════════════════
 
 async function executePlugin(plugin, m, parsed, sock) {
     const { handler, module } = plugin
@@ -317,6 +349,7 @@ async function executePlugin(plugin, m, parsed, sock) {
         prefix: parsed.prefix,
         command: parsed.command,
         isOwner: m.isOwner,
+        owner: m.isOwner,
         logger
     }
 
@@ -331,14 +364,11 @@ async function executePlugin(plugin, m, parsed, sock) {
     if (typeof module.handler === 'function') {
         return module.handler(m, context)
     }
-
-    throw new Error('El plugin no exporta una función ejecutable')
 }
 
-// ═══════════════════════════════════
-// 📩 PROCESAR MENSAJES
-// ═══════════════════════════════════
-
+// ══════════════════════════════════════
+// 📩 PROCESAR SOLO COMANDOS
+// ══════════════════════════════════════
 
 async function processMessage(message, sock) {
     if (!message?.key?.remoteJid || !message.message) return
@@ -349,29 +379,17 @@ async function processMessage(message, sock) {
 
     const m = normalizeMessage(message, sock)
 
-    // Ignorar mensajes normales sin prefijo.
+    // Los mensajes normales se ignoran aquí.
     if (!m.text || typeof m.text !== 'string') return
 
-    const prefixes = config.prefixes
+    const parsed = parseCommand(m.text)
 
-    if (!Array.isArray(prefixes)) {
-        console.error('❌ Revisa prefixes en config.js')
-        return
-    }
-
-    const input = m.text.trim()
-
-    // Si no comienza con un prefijo válido, no hacer nada.
-    if (!prefixes.some(prefix =>
-        typeof prefix === 'string' &&
-        prefix.length > 0 &&
-        input.startsWith(prefix)
-    )) return
-
-    const parsed = parseCommand(input)
+    // Si no tiene el prefijo configurado, no se hace nada.
     if (!parsed) return
 
     const matches = plugins.get(parsed.command)
+
+    // Comando no registrado: ignorar sin responder.
     if (!matches?.length) return
 
     await logCommand(m, parsed, sock)
@@ -381,23 +399,22 @@ async function processMessage(message, sock) {
             await executePlugin(plugin, m, parsed, sock)
         } catch (error) {
             console.error(
-                `❌ Error en ${parsed.prefix}${parsed.command}:`,
+                chalk.red(`❌ Error en ${parsed.prefix}${parsed.command}:`),
                 error
             )
 
             try {
                 await m.reply(
-                    `❌ Error al ejecutar ${parsed.prefix}${parsed.command}.`
+                    `❌ Ocurrió un error al ejecutar ${parsed.prefix}${parsed.command}.`
                 )
             } catch {}
         }
     }
 }
 
-
-// ═══════════════════════════════════
-// 🔌 SOCKET Y RECONEXIÓN
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// 🔌 CONEXIÓN Y RECONEXIÓN
+// ══════════════════════════════════════
 
 async function attachSocket(sock) {
     activeSock = sock
@@ -412,6 +429,7 @@ async function attachSocket(sock) {
             if (!chat || chat === 'status@broadcast') continue
 
             const id = `${chat}:${message.key.id}`
+
             if (processedMessages.has(id)) continue
 
             processedMessages.add(id)
@@ -422,9 +440,10 @@ async function attachSocket(sock) {
             }
 
             processMessage(message, sock).catch(error => {
-                console.error(chalk.red(
-                    `❌ Error procesando mensaje: ${error.message}`
-                ))
+                console.error(
+                    chalk.red('❌ Error procesando comando:'),
+                    error
+                )
             })
         }
     })
@@ -435,16 +454,16 @@ async function attachSocket(sock) {
 
         const reason = lastDisconnect?.error?.output?.statusCode
 
-        console.log(chalk.yellow(
-            `⚠️ Conexión cerrada. Código: ${reason ?? 'desconocido'}`
-        ))
+        console.log(
+            chalk.yellow(`⚠️ Conexión cerrada. Código: ${reason ?? 'desconocido'}`)
+        )
 
         if (
             reason === 401 ||
             reason === DisconnectReason.loggedOut
         ) {
             console.log(chalk.red(
-                '❌ Sesión rechazada. Revisa la vinculación antes de volver a intentarlo.'
+                '❌ La sesión fue rechazada o cerrada. Revisa la vinculación.'
             ))
             return
         }
@@ -456,12 +475,12 @@ async function attachSocket(sock) {
 
             if (sock !== activeSock) return
 
-            console.log(chalk.cyan('🔄 Intentando reconectar...'))
+            console.log(chalk.cyan('🔄 Reconectando...'))
 
             const newSock = await connect()
             await attachSocket(newSock)
 
-            console.log(chalk.green('✅ Socket nuevo registrado.'))
+            console.log(chalk.green('✅ Nueva conexión registrada.'))
         } catch (error) {
             console.error(
                 chalk.red('❌ Error al reconectar:'),
@@ -473,19 +492,24 @@ async function attachSocket(sock) {
     })
 }
 
-// ═══════════════════════════════════
-// 🚀 INICIO
-// ═══════════════════════════════════
+// ══════════════════════════════════════
+// 🚀 INICIAR BOT
+// ══════════════════════════════════════
 
 async function start() {
     banner()
+
+    if (typeof config.PREFIX !== 'string' || !config.PREFIX) {
+        throw new Error('Define PREFIX como texto en config.js')
+    }
+
     await loadPlugins()
 
     const sock = await connect()
     await attachSocket(sock)
 
     console.log(chalk.greenBright.bold(
-        `\n✅ ${config.botName} está escuchando mensajes nuevos.\n`
+        `\n✅ ${config.BOT_NAME} está listo.\n`
     ))
 }
 
