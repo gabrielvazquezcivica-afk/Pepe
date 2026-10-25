@@ -1,132 +1,118 @@
 
 import axios from 'axios'
-import { generateWAMessageContent } from '@whiskeysockets/baileys'
+import {
+  generateWAMessageFromContent,
+  generateWAMessageContent,
+  proto
+} from '@whiskeysockets/baileys'
 
 const API_URL = 'https://api-faa.my.id/faa/ytplay'
 
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
-  const from = m.key.remoteJid
+  const chat = m.key.remoteJid
   const query = args.join(' ').trim()
 
   if (!query) {
-    return sock.sendMessage(from, {
-      text: '🎵 *ESCRIBE EL NOMBRE DE LA CANCIÓN*\n\n> Ejemplo: .play IMU'
-    }, { quoted: m })
+    return m.reply('🎵 Escribe una canción. Ejemplo: .play IMU')
   }
 
   try {
-    await sock.sendMessage(from, {
+    await sock.sendMessage(chat, {
       react: { text: '🔎', key: m.key }
     }).catch(() => {})
 
-    // Buscar usando la API original que ya funciona
-    const response = await axios.get(API_URL, {
+    console.log('[PLAY] Buscando:', query)
+
+    const { data } = await axios.get(API_URL, {
       params: { query },
       timeout: 60000
     })
 
-    const data = response.data
     const song = data?.result
 
     if (!data?.status || !song?.mp3) {
-      throw new Error('No se encontró la canción o el MP3')
+      return m.reply('❌ No se encontró la canción.')
     }
 
     const title = song.title || query
     const author = song.author || 'Desconocido'
-
-    const duration = song.duration_timestamp ||
-      (typeof song.duration === 'number'
-        ? `${Math.floor(song.duration / 60)}:${String(
-            song.duration % 60
-          ).padStart(2, '0')}`
-        : 'Desconocida')
-
+    const duration = song.duration_timestamp || 'Desconocida'
     const views = Number(song.views || 0).toLocaleString('es-MX')
-    const videoUrl = song.url || ''
 
     const caption =
-      '╭━━━〔 🐸 PEPE BOT 〕━━━╮\n' +
-      `│ 🎵 Título: ${title}\n` +
-      `│ 👤 Artista: ${author}\n` +
-      `│ ⏱️ Duración: ${duration}\n` +
-      `│ 👁️ Vistas: ${views}\n` +
-      '╰━━━━━━━━━━━━━━━━━━╯\n\n' +
-      '👇 *SELECCIONA EL FORMATO QUE DESEAS*'
+      `🐸 *PEPE BOT — RESULTADO*\n\n` +
+      `🎵 *Título:* ${title}\n` +
+      `👤 *Artista:* ${author}\n` +
+      `⏱️ *Duración:* ${duration}\n` +
+      `👁️ *Vistas:* ${views}\n\n` +
+      `👇 Selecciona qué deseas descargar.`
 
-    const rows = [
+    const buttons = [
       {
-        header: '🎵 AUDIO',
-        title: 'Descargar MP3',
-        description: 'Obtener la canción en audio',
-        id: `.playaudio ${song.mp3}`
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          display_text: '🎵 Descargar audio',
+          id: `.playaudio ${song.mp3}`
+        })
       }
     ]
 
-    if (videoUrl) {
-      rows.push({
-        header: '🎬 VIDEO',
-        title: 'Descargar MP4',
-        description: 'Obtener el video de YouTube',
-        id: `.playmp4 ${videoUrl}`
+    if (song.url) {
+      buttons.push({
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          display_text: '🎬 Descargar video',
+          id: `.playmp4 ${song.url}`
+        })
       })
     }
 
-    const interactiveMessage = {
-      body: { text: caption },
-      footer: { text: '🐸 PEPE BOT • Descargas' },
-      header: {
-        title: '🎧 Resultado encontrado',
-        hasMediaAttachment: false
-      },
-      nativeFlowMessage: {
-        buttons: [
-          {
-            name: 'single_select',
-            buttonParamsJson: JSON.stringify({
-              title: '📥 Elegir formato',
-              sections: [
-                {
-                  title: 'Opciones de descarga',
-                  rows
-                }
-              ]
-            })
-          }
-        ]
-      }
-    }
+    let header = proto.Message.InteractiveMessage.Header.create({
+      title: '🎧 Canción encontrada',
+      hasMediaAttachment: false
+    })
 
-    // Intentar añadir la miniatura sin bloquear el menú
+    // La miniatura es opcional: si falla, el menú todavía se envía.
     if (song.thumbnail) {
       try {
-        const imageContent = await Promise.race([
+        const image = await Promise.race([
           generateWAMessageContent(
             { image: { url: song.thumbnail } },
             { upload: sock.waUploadToServer }
           ),
           new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error('Tiempo de espera de miniatura agotado')),
-              15000
-            )
+            setTimeout(() => reject(new Error('Tiempo agotado al cargar miniatura')), 15000)
           )
         ])
 
-        interactiveMessage.header = {
-          title: '🎧 Resultado encontrado',
+        header = proto.Message.InteractiveMessage.Header.create({
+          title: '🎧 Canción encontrada',
           hasMediaAttachment: true,
-          imageMessage: imageContent.imageMessage
-        }
-      } catch (imageError) {
-        console.error('[PLAY THUMBNAIL]', imageError.message)
+          imageMessage: image.imageMessage
+        })
+      } catch (err) {
+        console.log('[PLAY] Miniatura omitida:', err.message)
       }
     }
 
-    await sock.relayMessage(
-      from,
+    const interactive = proto.Message.InteractiveMessage.create({
+      header,
+      body: proto.Message.InteractiveMessage.Body.create({
+        text: caption
+      }),
+      footer: proto.Message.InteractiveMessage.Footer.create({
+        text: 'PEPE BOT • Descargas'
+      }),
+      nativeFlowMessage:
+        proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons
+        })
+    })
+
+    const message = generateWAMessageFromContent(
+      chat,
       {
         viewOnceMessage: {
           message: {
@@ -134,39 +120,37 @@ handler.run = async (sock, m, args = []) => {
               deviceListMetadata: {},
               deviceListMetadataVersion: 2
             },
-            interactiveMessage
+            interactiveMessage: interactive
           }
         }
       },
-      {}
+      {
+        userJid: sock.user?.id
+      }
     )
 
-    await sock.sendMessage(from, {
+    console.log('[PLAY] Enviando ficha interactiva...')
+
+    await sock.relayMessage(chat, message.message, {
+      messageId: message.key.id
+    })
+
+    console.log('[PLAY] Ficha enviada.')
+
+    await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
     }).catch(() => {})
 
   } catch (error) {
-    console.error(
-      '[PLAY]',
-      error.response?.status || error.code || error.message
-    )
+    console.error('[PLAY ERROR]', error?.stack || error)
 
-    await sock.sendMessage(from, {
+    await sock.sendMessage(chat, {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
-    let message = '❌ *NO SE PUDO BUSCAR LA CANCIÓN. INTENTA MÁS TARDE.*'
-
-    if (
-      error.code === 'ECONNABORTED' ||
-      error.code === 'ETIMEDOUT'
-    ) {
-      message = '⏳ *LA API TARDÓ DEMASIADO. INTENTA DE NUEVO.*'
-    }
-
-    await sock.sendMessage(from, {
-      text: message
-    }, { quoted: m }).catch(() => {})
+    await m.reply(
+      '❌ No se pudo enviar la ficha. Revisa la consola de Termux.'
+    ).catch(() => {})
   }
 }
 
