@@ -1,9 +1,4 @@
 import axios from 'axios'
-import {
-  generateWAMessageFromContent,
-  generateWAMessageContent,
-  proto
-} from '@whiskeysockets/baileys'
 
 const API_URL = 'https://api-faa.my.id/faa/ytplay'
 
@@ -36,13 +31,21 @@ handler.run = async (sock, m, args = []) => {
     const song = data?.result
 
     if (!data?.status || !song?.mp3) {
-      return m.reply('❌ No se encontró la canción.')
+      await m.reply('❌ No se encontró la canción.')
+      return
     }
 
     const title = song.title || query
     const author = song.author || 'Desconocido'
+
     const duration =
-      song.duration_timestamp || song.duration || 'Desconocida'
+      song.duration_timestamp ||
+      (typeof song.duration === 'number'
+        ? `${Math.floor(song.duration / 60)}:${String(
+            song.duration % 60
+          ).padStart(2, '0')}`
+        : 'Desconocida')
+
     const views = Number(song.views || 0).toLocaleString('es-MX')
 
     const caption =
@@ -51,100 +54,51 @@ handler.run = async (sock, m, args = []) => {
       `👤 *Artista:* ${author}\n` +
       `⏱️ *Duración:* ${duration}\n` +
       `👁️ *Vistas:* ${views}\n\n` +
-      '👇 *Selecciona qué deseas descargar.*'
+      '👇 *Selecciona el formato de descarga:*'
 
+    // Botones clásicos de WhatsApp
     const buttons = [
       {
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: '🎵 Descargar audio',
-          id: 'playaudio'
-        })
+        buttonId: `.playaudio ${song.mp3}`,
+        buttonText: {
+          displayText: '🎵 Descargar audio MP3'
+        },
+        type: 1
       }
     ]
 
     if (song.url) {
       buttons.push({
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: '🎬 Descargar video',
-          id: 'playmp4'
-        })
+        buttonId: `.playmp4 ${song.url}`,
+        buttonText: {
+          displayText: '🎬 Descargar video MP4'
+        },
+        type: 1
       })
     }
 
-    let header = proto.Message.InteractiveMessage.Header.create({
-      title: '🎧 Canción encontrada',
-      hasMediaAttachment: false
-    })
+    const message = {
+      caption,
+      footer: '🐸 PEPE BOT • Descargas',
+      buttons,
+      headerType: 4
+    }
 
     if (song.thumbnail) {
-      try {
-        const image = await generateWAMessageContent(
-          { image: { url: song.thumbnail } },
-          { upload: sock.waUploadToServer }
-        )
-
-        header = proto.Message.InteractiveMessage.Header.create({
-          title: '🎧 Canción encontrada',
-          hasMediaAttachment: true,
-          imageMessage: image.imageMessage
-        })
-      } catch (error) {
-        console.log(
-          '[PLAY] No se pudo cargar la miniatura:',
-          error.message
-        )
-      }
+      message.image = { url: song.thumbnail }
+    } else {
+      message.text = caption
+      delete message.caption
+      delete message.headerType
     }
 
-    const interactive =
-      proto.Message.InteractiveMessage.create({
-        header,
-        body: proto.Message.InteractiveMessage.Body.create({
-          text: caption
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.create({
-          text: 'PEPE BOT • Descargas'
-        }),
-        nativeFlowMessage:
-          proto.Message.InteractiveMessage.NativeFlowMessage.create({
-            buttons
-          })
-      })
+    console.log('[PLAY] Enviando botones clásicos...')
 
-    const message = generateWAMessageFromContent(
-      chat,
-      {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: {
-              deviceListMetadata: {},
-              deviceListMetadataVersion: 2
-            },
-            interactiveMessage: interactive
-          }
-        }
-      },
-      {
-        userJid: sock.user.id
-      }
-    )
+    await sock.sendMessage(chat, message, {
+      quoted: m
+    })
 
-    console.log('[PLAY] Enviando ficha interactiva...')
-
-    await sock.sendMessage(
-  chat,
-  {
-    image: song.thumbnail
-      ? { url: song.thumbnail }
-      : undefined,
-    caption
-  },
-  { quoted: m }
-)
-
-    console.log('[PLAY] Ficha interactiva enviada.')
+    console.log('[PLAY] Mensaje enviado.')
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
@@ -153,16 +107,28 @@ handler.run = async (sock, m, args = []) => {
   } catch (error) {
     console.error(
       '[PLAY ERROR]',
-      error?.stack || error
+      error?.response?.status || error?.code || error?.message
     )
 
     await sock.sendMessage(chat, {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
-    await m.reply(
-      '❌ No se pudo enviar la ficha. Intenta de nuevo.'
-    ).catch(() => {})
+    let message =
+      '❌ No se pudo buscar la canción. Intenta de nuevo.'
+
+    if (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT'
+    ) {
+      message = '⏳ La API tardó demasiado. Intenta más tarde.'
+    } else if (error.response?.status === 429) {
+      message = '⏳ La API está recibiendo demasiadas solicitudes.'
+    } else if (error.response?.status >= 500) {
+      message = '⚠️ El servicio de descargas no está disponible.'
+    }
+
+    await m.reply(message).catch(() => {})
   }
 }
 
