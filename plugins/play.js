@@ -4,41 +4,60 @@ const handler = {
 
     run: async (sock, m, args) => {
         const query = args.join(' ').trim()
+        const prefix = '.'
 
         if (!query) {
-            return m.reply(
-                '❗ Escribe el nombre de una canción o video.\n\n' +
-                'Ejemplo: .play La Santa Grifa'
-            )
+            return m.reply('❗ Ejemplo: .play Table Dance')
         }
 
-        try {
-            await m.reply('🔎 PEPE BOT está buscando tu canción...')
+        let timer
 
+        try {
             const api =
                 'https://api-faa.my.id/faa/ytplay?query=' +
                 encodeURIComponent(query)
 
-            const response = await fetch(api)
+            const response = await Promise.race([
+                fetch(api),
+                new Promise((_, reject) => {
+                    timer = setTimeout(
+                        () => reject(new Error('La API tardó demasiado')),
+                        15000
+                    )
+                })
+            ])
+
+            clearTimeout(timer)
+
             if (!response.ok) {
-                throw new Error(`Error HTTP ${response.status} en la API`)
+                throw new Error(`HTTP ${response.status}`)
             }
 
             const data = await response.json()
             const video = data.result
 
             if (!data.status || !video?.url || !video?.mp3) {
-                throw new Error('La API no devolvió un resultado válido.')
+                throw new Error('No se encontró el resultado.')
             }
 
             const chat = m.chat || m.key.remoteJid
+
+            // Obtener la miniatura para mostrarla en la ficha.
+            const { generateWAMessageContent } =
+                await import('@whiskeysockets/baileys')
+
+            const { imageMessage } = await generateWAMessageContent(
+                { image: { url: video.thumbnail } },
+                { upload: sock.waUploadToServer }
+            )
+
             const body =
                 `🐸 *𝐏𝐄𝐏𝐄 𝐁𝐎𝐓*\n\n` +
                 `🎵 *${video.title}*\n\n` +
-                `👤 *Artista:* ${video.author || 'Desconocido'}\n` +
-                `⏱️ *Duración:* ${video.duration_timestamp || 'Desconocida'}\n` +
-                `👁️ *Vistas:* ${Number(video.views || 0).toLocaleString('es-MX')}\n\n` +
-                `📥 Selecciona el formato que deseas:`
+                `👤 Artista: ${video.author || 'Desconocido'}\n` +
+                `⏱️ Duración: ${video.duration_timestamp || 'N/A'}\n` +
+                `👁️ Vistas: ${Number(video.views || 0).toLocaleString('es-MX')}\n\n` +
+                `📥 Selecciona audio o video:`
 
             const msg = {
                 viewOnceMessage: {
@@ -50,42 +69,30 @@ const handler = {
                         interactiveMessage: {
                             body: { text: body },
                             footer: { text: '🐸 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓' },
-                            header: { title: '🎶 PLAY' },
+                            header: {
+                                hasMediaAttachment: true,
+                                imageMessage
+                            },
                             nativeFlowMessage: {
                                 buttons: [{
                                     name: 'single_select',
                                     buttonParamsJson: JSON.stringify({
                                         title: '📥 ELEGIR FORMATO',
-                                        sections: [
-                                            {
-                                                title: '🎧 AUDIO',
-                                                rows: [
-                                                    {
-                                                        title: '🎵 Descargar MP3',
-                                                        description: 'Audio',
-                                                        id: `.playaudio ${video.url}`
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                title: '🎬 VIDEO',
-                                                rows: [
-                                                    {
-                                                        title: '📹 Descargar MP4',
-                                                        description: 'Video',
-                                                        id: `.playmp4 ${video.url}`
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                title: 'ℹ️ INFORMACIÓN',
-                                                rows: [{
-                                                    title: '🔗 Abrir en YouTube',
-                                                    description: 'Ver video original',
-                                                    id: `.playlink ${video.url}`
-                                                }]
-                                            }
-                                        ]
+                                        sections: [{
+                                            title: 'DESCARGAS',
+                                            rows: [
+                                                {
+                                                    title: '🎧 Descargar audio MP3',
+                                                    description: 'Audio de la canción',
+                                                    id: `${prefix}playaudio ${video.url}`
+                                                },
+                                                {
+                                                    title: '🎬 Descargar video MP4',
+                                                    description: 'Video de la canción',
+                                                    id: `${prefix}playmp4 ${video.url}`
+                                                }
+                                            ]
+                                        }]
                                     })
                                 }]
                             }
@@ -94,13 +101,16 @@ const handler = {
                 }
             }
 
-            await sock.relayMessage(chat, msg.viewOnceMessage.message, {})
+            await sock.relayMessage(
+                chat,
+                msg.viewOnceMessage.message,
+                {}
+            )
 
         } catch (error) {
+            clearTimeout(timer)
             console.error('[PEPE PLAY]', error)
-            await m.reply(
-                `❌ Error en Play:\n${error.message || error}`
-            )
+            await m.reply(`❌ Error en Play: ${error.message || error}`)
         }
     }
 }
