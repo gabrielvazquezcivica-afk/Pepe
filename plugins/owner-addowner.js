@@ -3,137 +3,124 @@ import fs from 'fs'
 import path from 'path'
 import config from '../config.js'
 
-const file = path.resolve(process.cwd(), 'database.json')
 const handler = {}
 
-const clean = value =>
-  String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '')
+const file = path.resolve(process.cwd(), 'database/owners.json')
+
+function normalize(value = '') {
+    return String(value).replace(/\D/g, '')
+}
 
 function readDB() {
-  try {
-    const db = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (!db || Array.isArray(db) || typeof db !== 'object') {
-      throw new Error('Formato inválido en database.json')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, JSON.stringify({ owners: [] }, null, 2))
     }
+
+    const db = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!Array.isArray(db.owners)) db.owners = []
     return db
-  } catch (e) {
-    if (e.code === 'ENOENT') return {}
-    throw e
-  }
 }
 
 function saveDB(db) {
-  const temp = `${file}.tmp`
-  fs.writeFileSync(temp, JSON.stringify(db, null, 2))
-  fs.renameSync(temp, file)
+    fs.writeFileSync(file, JSON.stringify(db, null, 2))
 }
 
 function getSender(m) {
-  const jid = m.key.participant || m.key.remoteJid || ''
-  const isLid = jid.endsWith('@lid')
-
-  return {
-    jid,
-    number: isLid ? '' : clean(jid),
-    lid: isLid ? clean(jid) : ''
-  }
+    return m.key?.participant || m.participant || m.key?.remoteJid || ''
 }
 
-function isMainOwner(sender) {
-  const numbers = (config.owner || []).map(clean).filter(Boolean)
-  const lids = (config.ownerLid || []).map(clean).filter(Boolean)
+function isMainOwner(m) {
+    const sender = getSender(m)
+    const senderNumber = normalize(sender.split('@')[0])
+    const senderLid = normalize(
+        m.key?.participantAlt?.split('@')[0] || ''
+    )
 
-  return (
-    (sender.number && numbers.includes(sender.number)) ||
-    (sender.lid && lids.includes(sender.lid))
-  )
+    const numbers = (config.owner || []).filter(Boolean).map(normalize)
+    const lids = (config.ownerLid || []).filter(Boolean).map(normalize)
+
+    return numbers.includes(senderNumber) ||
+        lids.includes(senderNumber) ||
+        numbers.includes(senderLid) ||
+        lids.includes(senderLid)
 }
 
 function getTarget(m, args) {
-  const ctx =
-    m.message?.extendedTextMessage?.contextInfo ||
-    m.message?.imageMessage?.contextInfo ||
-    m.message?.videoMessage?.contextInfo ||
-    {}
+    const context =
+        m.message?.extendedTextMessage?.contextInfo ||
+        m.msg?.contextInfo ||
+        {}
 
-  const jid = ctx.mentionedJid?.[0] || ctx.participant
+    const mentioned =
+        m.mentionedJid?.[0] ||
+        context.mentionedJid?.[0]
 
-  if (jid) {
-    const lid = jid.endsWith('@lid')
-    return { id: clean(jid), jid, lid }
-  }
+    const quoted = context.participant
 
-  const number = clean(args[0])
-  if (!number) return null
+    const jid = mentioned || quoted
 
-  return {
-    id: number,
-    jid: `${number}@s.whatsapp.net`,
-    lid: false
-  }
+    if (jid) {
+        return {
+            id: normalize(jid.split('@')[0]),
+            jid,
+            lid: jid.endsWith('@lid') ? normalize(jid.split('@')[0]) : ''
+        }
+    }
+
+    const number = normalize(args[0] || '')
+    if (!number) return null
+
+    return {
+        id: number,
+        jid: `${number}@s.whatsapp.net`,
+        lid: ''
+    }
 }
 
 handler.run = async (sock, m, args = []) => {
-  const chat = m.key.remoteJid
-  const sender = getSender(m)
+    const from = m.key?.remoteJid
 
-  if (!isMainOwner(sender)) {
-    return m.reply('> SOLO EL OWNER PRINCIPAL PUEDE AGREGAR OWNER')
-  }
-
-  const target = getTarget(m, args)
-
-  if (!target?.id) {
-    return m.reply(
-      '> MENCIONA O RESPONDE A UN USUARIO PARA PROMOVER A OWNER\n' +
-      '> USO: .addowner 521234567890'
-    )
-  }
-
-  const mainNumbers = (config.owner || []).map(clean).filter(Boolean)
-  const mainLids = (config.ownerLid || []).map(clean).filter(Boolean)
-
-  if (
-    (!target.lid && mainNumbers.includes(target.id)) ||
-    (target.lid && mainLids.includes(target.id))
-  ) {
-    return m.reply('> ESTE USUARIO YA ES OWNER PRINCIPAL')
-  }
-
-  try {
-    const db = readDB()
-    if (!Array.isArray(db.pepeOwners)) db.pepeOwners = []
-
-    if (db.pepeOwners.some(o =>
-      clean(typeof o === 'string' ? o : o.id) === target.id &&
-      Boolean(o.lid) === target.lid
-    )) {
-      return m.reply('> ESTE USUARIO YA ES OWNER')
+    if (!isMainOwner(m)) {
+        return sock.sendMessage(from, {
+            text: '> ❌ Solo el dueño principal puede usar este comando.'
+        }, { quoted: m })
     }
 
-    db.pepeOwners.push({
-      id: target.id,
-      jid: target.jid,
-      lid: target.lid
+    const target = getTarget(m, args)
+
+    if (!target?.id) {
+        return sock.sendMessage(from, {
+            text: '> ⚠️ Menciona a un usuario, responde a su mensaje o escribe su número.\n> Ejemplo: .addowner @usuario'
+        }, { quoted: m })
+    }
+
+    const db = readDB()
+
+    const exists = db.owners.some(owner => {
+        const id = typeof owner === 'string' ? owner : owner.id
+        const jid = typeof owner === 'string' ? '' : owner.jid
+        const lid = typeof owner === 'string' ? '' : owner.lid
+
+        return normalize(id) === target.id ||
+            (target.jid && jid === target.jid) ||
+            (target.lid && lid === target.lid)
     })
 
+    if (exists) {
+        return sock.sendMessage(from, {
+            text: '> ⚠️ Ese usuario ya es owner.'
+        }, { quoted: m })
+    }
+
+    db.owners.push(target)
     saveDB(db)
 
-    const senderTag = sender.number || sender.lid || 'Owner'
-    const targetTag = target.id
-
-    return sock.sendMessage(chat, {
-      text:
-        '`¡ NUEVO OWNER AGREGADO !`\n' +
-        `> @${targetTag}\n` +
-        '`OTORGADO POR:`\n' +
-        `> @${senderTag}`,
-      mentions: [...new Set([target.jid, sender.jid])]
+    return sock.sendMessage(from, {
+        text: `\`¡ NUEVO OWNER AGREGADO !\`\n> @${target.id}\n\n\`OTORGADO POR:\`\n> @${normalize(getSender(m).split('@')[0])}`,
+        mentions: [target.jid, getSender(m)].filter(jid => jid?.includes('@'))
     }, { quoted: m })
-  } catch (e) {
-    console.error('[ADDOWNER]', e)
-    return m.reply('> ERROR AL GUARDAR EL OWNER EN DATABASE.JSON')
-  }
 }
 
 handler.help = ['addowner']
