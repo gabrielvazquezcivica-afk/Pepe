@@ -1,10 +1,8 @@
 import axios from 'axios'
+import { sendButtons } from 'baileys-buttons'
 
 const SEARCH_API = 'https://ytm.vrma.dev/search'
-const AUDIO_API = 'https://api.delirius.online/download/ytmp3'
-
-// Configura aquí una API MP4 que devuelva un enlace de descarga válido.
-const VIDEO_API = ''
+const DOWNLOAD_API = 'https://api.delirius.online/download/ytmp3'
 
 const handler = {}
 
@@ -14,9 +12,9 @@ handler.run = async (sock, m, args = []) => {
 
   if (!query) {
     return m.reply(
-      '🐸 *PEPE BOT | MUSIC CENTER*\n\n' +
-      '🎵 Escribe el nombre de una canción.\n' +
-      '📌 Ejemplo: .play IMU'
+      '🐸 *PEPE BOT*\n\n' +
+      '🎵 Escribe el nombre de una canción.\n\n' +
+      'Ejemplo: .play IMU'
     )
   }
 
@@ -27,11 +25,14 @@ handler.run = async (sock, m, args = []) => {
 
     console.log('[PLAY] Buscando:', query)
 
-    // 1. Buscar canción
+    // 1. Buscar canción en YouTube Music
     const { data: searchData } = await axios.get(
       SEARCH_API,
       {
-        params: { q: query, type: 'songs' },
+        params: {
+          q: query,
+          type: 'songs'
+        },
         timeout: 25000
       }
     )
@@ -41,64 +42,106 @@ handler.run = async (sock, m, args = []) => {
     )
 
     if (!searchData?.success || !song) {
-      return m.reply(
-        '🐸 *PEPE BOT*\n\n❌ No se encontró la canción.'
-      )
+      return m.reply('❌ No se encontró la canción.')
     }
 
     const videoUrl =
       `https://www.youtube.com/watch?v=${song.videoId}`
 
+    console.log('[PLAY] Encontrada:', song.title)
+
+    // 2. Obtener el enlace MP3 de la API nueva
+    const { data: downloadData } = await axios.get(
+      DOWNLOAD_API,
+      {
+        params: { url: videoUrl },
+        timeout: 60000
+      }
+    )
+
+    if (
+      !downloadData?.status ||
+      !downloadData?.data?.download
+    ) {
+      throw new Error('No se obtuvo el enlace MP3')
+    }
+
+    const result = downloadData.data
+    const title = result.title || song.title || query
+    const author =
+      result.author || song.artist || 'Desconocido'
+
+    const duration = song.duration || 'Desconocida'
+    const views = song.plays || 'No disponibles'
+
     const thumbnail =
+      result.image ||
       song.thumbnails?.at(-1)?.url ||
       song.thumbnails?.[0]?.url
 
     const caption =
-      '🐸 *ＰＥＰＥ ＢＯＴ*\n' +
-      '🟢 *MUSIC CENTER*\n' +
-      '━━━━━━━━━━━━━━━━━━\n' +
-      `🎵 *${song.title || 'Sin título'}*\n\n` +
-      `👤 *Artista:* ${song.artist || 'Desconocido'}\n` +
-      `⏱️ *Duración:* ${song.duration || 'Desconocida'}\n` +
-      `👁️ *Reproducciones:* ${song.plays || 'No disponibles'}\n` +
-      '━━━━━━━━━━━━━━━━━━\n' +
-      '📌 Selecciona una de las opciones\n' +
-      '🌿 _Tu música, a tu manera._'
+      '🐸 *PEPE BOT — RESULTADO*\n\n' +
+      `🎵 *Título:* ${title}\n` +
+      `👤 *Artista:* ${author}\n` +
+      `⏱️ *Duración:* ${duration}\n` +
+      `👁️ *Reproducciones:* ${views}\n\n` +
+      '👇 Selecciona el formato que deseas descargar.'
 
-    // 2. Crear ficha con botones
+    // 3. Enviar ficha musical
+    if (thumbnail) {
+      try {
+        await sock.sendMessage(
+          chat,
+          {
+            image: { url: thumbnail },
+            caption
+          },
+          { quoted: m }
+        )
+      } catch (error) {
+        console.log('[PLAY] Error de miniatura:', error.message)
+
+        await sock.sendMessage(
+          chat,
+          { text: caption },
+          { quoted: m }
+        )
+      }
+    } else {
+      await sock.sendMessage(
+        chat,
+        { text: caption },
+        { quoted: m }
+      )
+    }
+
+    // 4. Botones con el mismo sistema original
     const buttons = [
       {
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: '🎧 Audio MP3',
-          id: `.playaudio ${song.videoId}`
-        })
+        id: `.playaudio ${encodeURIComponent(result.download)}`,
+        displayText: '🎵 Descargar audio MP3'
       },
       {
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: '🎬 Video MP4',
-          id: `.playvideo ${song.videoId}`
-        })
+        id: `.playmp4 ${encodeURIComponent(videoUrl)}`,
+        displayText: '🎬 Descargar video MP4'
       }
     ]
 
-    const message = {
-      ...(thumbnail
-        ? { image: { url: thumbnail } }
-        : {}),
-      caption,
-      footer: '🐸 PEPE BOT',
-      buttons
-    }
+    console.log('[PLAY] Enviando botones...')
 
-    await sock.sendMessage(chat, message, { quoted: m })
+    await sendButtons(sock, chat, {
+      title: '🐸 PEPE BOT',
+      text: '¿Qué deseas descargar?',
+      footer: 'PEPE BOT • Descargas',
+      buttons,
+      quoted: m
+    })
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
     }).catch(() => {})
 
-    console.log('[PLAY] Ficha enviada:', song.title)
+    console.log('[PLAY] Ficha y botones enviados.')
 
   } catch (error) {
     console.error(
@@ -111,9 +154,22 @@ handler.run = async (sock, m, args = []) => {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
-    await m.reply(
-      '🐸 *PEPE BOT*\n\n❌ No se pudo buscar la canción.'
-    ).catch(() => {})
+    let message = '❌ No se pudo procesar la búsqueda.'
+
+    if (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT'
+    ) {
+      message = '⏳ La API tardó demasiado. Intenta de nuevo.'
+    } else if (error.response?.status === 403) {
+      message = '🚫 La API rechazó la petición.'
+    } else if (error.response?.status === 429) {
+      message = '⏳ Demasiadas solicitudes. Intenta más tarde.'
+    } else if (error.response?.status >= 500) {
+      message = '⚠️ El servicio no está disponible.'
+    }
+
+    await m.reply(`🐸 *PEPE BOT*\n\n${message}`).catch(() => {})
   }
 }
 
