@@ -1,54 +1,43 @@
-
 import axios from 'axios'
 
+const API = 'https://api.delirius.online/download/ytmp3'
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
-  const from = m.key.remoteJid
-  const url = args[0]
+  const chat = m.key.remoteJid
+  const id = args[0]
 
-  if (!url || !/^https?:\/\//i.test(url)) {
-    return m.reply('❌ No se recibió un enlace de audio válido.')
-  }
+  if (!id) return m.reply('❌ Falta el ID del video.')
 
   try {
-    await sock.sendMessage(from, {
-      react: { text: '🎵', key: m.key }
-    }).catch(() => {})
+    await m.reply('🎧 Obteniendo el audio...')
 
-    const response = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 120000,
-      maxContentLength: 50 * 1024 * 1024,
-      maxBodyLength: 50 * 1024 * 1024
+    const url = `https://www.youtube.com/watch?v=${id}`
+
+    const { data } = await axios.get(API, {
+      params: { url },
+      timeout: 60000
     })
 
-    const audio = Buffer.from(response.data)
-
-    if (!audio.length) {
-      throw new Error('El audio está vacío')
+    if (!data?.status || !data?.data?.download) {
+      throw new Error('La API no devolvió un enlace de audio.')
     }
 
-    await sock.sendMessage(from, {
-      audio,
-      mimetype: 'audio/mpeg',
-      fileName: 'PEPE-BOT.mp3',
-      ptt: false
+    const result = data.data
+
+    await sock.sendMessage(chat, {
+      text: `🎵 *${result.title || 'Audio listo'}*\n📥 ${result.download}`
     }, { quoted: m })
 
-    await sock.sendMessage(from, {
-      react: { text: '✅', key: m.key }
-    }).catch(() => {})
-
   } catch (error) {
-    console.error('[PLAY AUDIO]', error.message)
-
-    await m.reply(
-      '❌ No se pudo descargar el audio. Intenta nuevamente.'
-    ).catch(() => {})
+    console.error('[PLAYAUDIO]', error.message)
+    await m.reply('❌ No se pudo obtener el audio. Intenta más tarde.')
   }
 }
 
 handler.command = ['playaudio']
+handler.help = ['playaudio <id>']
+handler.tags = ['descargas']
+handler.menu = false
 
 export default handler
