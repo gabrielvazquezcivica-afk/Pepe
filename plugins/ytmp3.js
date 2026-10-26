@@ -1,4 +1,3 @@
-
 import axios from 'axios'
 
 const API = 'https://api.delirius.online/download/ytmp3'
@@ -10,7 +9,7 @@ handler.run = async (sock, m, args = []) => {
   const input = args.join(' ').trim()
 
   if (!input) {
-    return m.reply('❌ Falta el ID o enlace del video.')
+    return m.reply('❌ Falta el enlace o ID del video.')
   }
 
   try {
@@ -18,36 +17,45 @@ handler.run = async (sock, m, args = []) => {
       react: { text: '🎧', key: m.key }
     }).catch(() => {})
 
-    // Aceptar ID o URL de YouTube.
+    // Aceptar enlaces completos, Shorts, youtu.be o ID.
     const match = input.match(
-      /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([a-zA-Z0-9_-]{11})/
+      /(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})/
     )
 
     const videoId = match?.[1] ||
       (/^[a-zA-Z0-9_-]{11}$/.test(input) ? input : null)
 
     if (!videoId) {
-      return m.reply('❌ El ID o enlace de YouTube no es válido.')
+      return m.reply(
+        '❌ Enlace o ID no válido.\n\n' +
+        'Ejemplo:\n.playaudio https://www.youtube.com/watch?v=ID'
+      )
     }
 
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`
 
-    await m.reply('⏳ Descargando y preparando el audio...')
+    await m.reply('⏳ Preparando el audio para WhatsApp...')
 
-    // Obtener el enlace de descarga.
+    // Solicitar el enlace de descarga a Delirius.
     const { data } = await axios.get(API, {
       params: { url: videoUrl },
-      timeout: 60000
+      timeout: 60000,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+      }
     })
 
     const result = data?.data
     const downloadUrl = result?.download
 
     if (!data?.status || !downloadUrl) {
-      throw new Error('La API no devolvió un enlace de audio.')
+      throw new Error(
+        'Delirius no devolvió un enlace de descarga válido.'
+      )
     }
 
-    // Descargar el archivo.
+    // Descargar los bytes reales del archivo.
     const response = await axios.get(downloadUrl, {
       responseType: 'arraybuffer',
       timeout: 120000,
@@ -55,7 +63,8 @@ handler.run = async (sock, m, args = []) => {
       headers: {
         'User-Agent': 'Mozilla/5.0',
         Accept: 'audio/mpeg, audio/*, application/octet-stream, */*'
-      }
+      },
+      validateStatus: status => status >= 200 && status < 300
     })
 
     const audio = Buffer.from(response.data)
@@ -64,19 +73,21 @@ handler.run = async (sock, m, args = []) => {
     ).toLowerCase()
 
     if (!audio.length) {
-      throw new Error('El archivo descargado está vacío.')
+      throw new Error('La descarga llegó vacía.')
     }
 
+    // No enviar páginas web o respuestas JSON como si fueran audio.
     if (
       contentType.includes('text/html') ||
-      contentType.includes('application/json')
+      contentType.includes('application/json') ||
+      contentType.includes('text/plain')
     ) {
       throw new Error(
-        `La descarga no devolvió audio. Tipo: ${contentType}`
+        `El enlace devolvió ${contentType}, no un archivo de audio.`
       )
     }
 
-    // Comprobar firmas habituales de archivos de audio.
+    // Detectar firmas de MP3.
     const isMp3 =
       audio.length >= 3 &&
       (
@@ -84,52 +95,32 @@ handler.run = async (sock, m, args = []) => {
         (audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0)
       )
 
-    const isMp4Audio =
-      audio.length >= 8 &&
-      audio.toString('ascii', 4, 8) === 'ftyp'
-
-    const isOgg =
-      audio.length >= 4 &&
-      audio.toString('ascii', 0, 4) === 'OggS'
-
-    const isWav =
-      audio.length >= 12 &&
-      audio.toString('ascii', 0, 4) === 'RIFF' &&
-      audio.toString('ascii', 8, 12) === 'WAVE'
-
-    if (!isMp3 && !isMp4Audio && !isOgg && !isWav) {
-      console.error(
-        '[PLAYAUDIO] Tipo recibido:',
-        contentType,
-        'Tamaño:',
-        audio.length,
-        'Bytes iniciales:',
-        audio.subarray(0, 16).toString('hex')
-      )
-
-      throw new Error(
-        'El archivo no parece ser un formato de audio válido.'
-      )
-    }
-
-    // Enviar como audio reproducible en WhatsApp.
-    // Solo declaramos MP3 si el archivo realmente es MP3.
     if (!isMp3) {
-      throw new Error(
-        `El archivo no es MP3. Tipo recibido: ${contentType || 'desconocido'}`
-      )
+      console.error('[PLAYAUDIO] Respuesta inválida:', {
+        status: response.status,
+        contentType,
+        bytes: audio.length,
+        signature: audio.subarray(0, 16).toString('hex')
+      })
+
+      throw new Error('La respuesta descargada no es un MP3 válido.')
     }
 
-    const safeTitle = String(result.title || 'Pepe-Bot-Audio')
+    const title = String(result.title || 'Pepe-Bot-Audio')
       .replace(/[\\/:*?"<>|]/g, '')
       .slice(0, 100)
 
-    await sock.sendMessage(chat, {
-      audio,
-      mimetype: 'audio/mpeg',
-      fileName: `${safeTitle}.mp3`,
-      ptt: false
-    }, { quoted: m })
+    // Enviar el MP3 como archivo reproducible en WhatsApp.
+    await sock.sendMessage(
+      chat,
+      {
+        audio,
+        mimetype: 'audio/mpeg',
+        fileName: `${title}.mp3`,
+        ptt: false
+      },
+      { quoted: m }
+    )
 
     await sock.sendMessage(chat, {
       react: { text: '✅', key: m.key }
@@ -147,13 +138,14 @@ handler.run = async (sock, m, args = []) => {
     }).catch(() => {})
 
     await m.reply(
-      '❌ No se pudo enviar un audio reproducible. Intenta de nuevo más tarde.'
+      '❌ No se pudo enviar el audio.\n' +
+      'La API puede estar fallando o el enlace no contiene un MP3 válido.'
     ).catch(() => {})
   }
 }
 
 handler.command = ['playaudio']
-handler.help = ['playaudio <ID o URL>']
+handler.help = ['playaudio <ID o enlace>']
 handler.tags = ['descargas']
 handler.menu = false
 
