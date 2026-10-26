@@ -3,23 +3,29 @@ import fs from 'fs'
 import path from 'path'
 import config from '../config.js'
 
-const file = path.resolve('./owners.json')
+const file = path.resolve(process.cwd(), 'database.json')
 const handler = {}
 
 const clean = value =>
   String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '')
 
-function getOwners() {
+function readDB() {
   try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
+    const db = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!db || Array.isArray(db) || typeof db !== 'object') {
+      throw new Error('Formato inválido en database.json')
+    }
+    return db
+  } catch (e) {
+    if (e.code === 'ENOENT') return {}
+    throw e
   }
 }
 
-function saveOwners(owners) {
-  fs.writeFileSync(file, JSON.stringify(owners, null, 2))
+function saveDB(db) {
+  const temp = `${file}.tmp`
+  fs.writeFileSync(temp, JSON.stringify(db, null, 2))
+  fs.renameSync(temp, file)
 }
 
 function getSender(m) {
@@ -44,38 +50,27 @@ function isMainOwner(sender) {
 }
 
 function getTarget(m, args) {
-  const context =
+  const ctx =
     m.message?.extendedTextMessage?.contextInfo ||
     m.message?.imageMessage?.contextInfo ||
     m.message?.videoMessage?.contextInfo ||
     {}
 
-  const mentioned = context.mentionedJid?.[0]
-  const quoted = context.participant
-  const input = (args[0] || '').trim()
-
-  const jid = mentioned || quoted
+  const jid = ctx.mentionedJid?.[0] || ctx.participant
 
   if (jid) {
-    if (jid.endsWith('@lid')) {
-      return { key: clean(jid), jid, lid: true }
-    }
-
-    return { key: clean(jid), jid, lid: false }
+    const lid = jid.endsWith('@lid')
+    return { id: clean(jid), jid, lid }
   }
 
-  if (input) {
-    const number = clean(input)
-    if (!number) return null
+  const number = clean(args[0])
+  if (!number) return null
 
-    return {
-      key: number,
-      jid: `${number}@s.whatsapp.net`,
-      lid: false
-    }
+  return {
+    id: number,
+    jid: `${number}@s.whatsapp.net`,
+    lid: false
   }
-
-  return null
 }
 
 handler.run = async (sock, m, args = []) => {
@@ -83,16 +78,15 @@ handler.run = async (sock, m, args = []) => {
   const sender = getSender(m)
 
   if (!isMainOwner(sender)) {
-    return m.reply(
-      '> SOLO EL OWNER PRINCIPAL PUEDE AGREGAR OWNER'
-    )
+    return m.reply('> SOLO EL OWNER PRINCIPAL PUEDE AGREGAR OWNER')
   }
 
   const target = getTarget(m, args)
 
-  if (!target?.key) {
+  if (!target?.id) {
     return m.reply(
-      '> MENCIONA O RESPONDE A UN USUARIO PARA PROMOVER A OWNER'
+      '> MENCIONA O RESPONDE A UN USUARIO PARA PROMOVER A OWNER\n' +
+      '> USO: .addowner 521234567890'
     )
   }
 
@@ -100,35 +94,47 @@ handler.run = async (sock, m, args = []) => {
   const mainLids = (config.ownerLid || []).map(clean).filter(Boolean)
 
   if (
-    (!target.lid && mainNumbers.includes(target.key)) ||
-    (target.lid && mainLids.includes(target.key))
+    (!target.lid && mainNumbers.includes(target.id)) ||
+    (target.lid && mainLids.includes(target.id))
   ) {
-    return m.reply('> ESTE USUARIO YA ES OWNER')
+    return m.reply('> ESTE USUARIO YA ES OWNER PRINCIPAL')
   }
 
-  const owners = getOwners()
+  try {
+    const db = readDB()
+    if (!Array.isArray(db.pepeOwners)) db.pepeOwners = []
 
-  if (owners.some(owner => clean(owner) === target.key)) {
-    return m.reply('> ESTE USUARIO YA ES OWNER')
+    if (db.pepeOwners.some(o =>
+      clean(typeof o === 'string' ? o : o.id) === target.id &&
+      Boolean(o.lid) === target.lid
+    )) {
+      return m.reply('> ESTE USUARIO YA ES OWNER')
+    }
+
+    db.pepeOwners.push({
+      id: target.id,
+      jid: target.jid,
+      lid: target.lid
+    })
+
+    saveDB(db)
+
+    const senderTag = sender.number || sender.lid || 'Owner'
+    const targetTag = target.id
+
+    return sock.sendMessage(chat, {
+      text:
+        '`¡ NUEVO OWNER AGREGADO !`\n' +
+        `> @${targetTag}\n` +
+        '`OTORGADO POR:`\n' +
+        `> @${senderTag}`,
+      mentions: [...new Set([target.jid, sender.jid])]
+    }, { quoted: m })
+  } catch (e) {
+    console.error('[ADDOWNER]', e)
+    return m.reply('> ERROR AL GUARDAR EL OWNER EN DATABASE.JSON')
   }
-
-  owners.push(target.key)
-  saveOwners(owners)
-
-  const senderJid = sender.jid
-  const senderTag = sender.number || sender.lid
-  const targetTag = target.key
-
-  return sock.sendMessage(chat, {
-    text:
-      '`¡ NUEVO OWNER AGREGADO !`\n' +
-      `> @${targetTag}\n` +
-      '`OTORGADO POR:`\n' +
-      `> @${senderTag}`,
-    mentions: [...new Set([target.jid, senderJid])]
-  }, { quoted: m })
 }
-
 
 handler.help = ['addowner']
 handler.tags = ['owner']
