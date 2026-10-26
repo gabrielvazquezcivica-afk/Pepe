@@ -4,13 +4,13 @@ const config = {
 
     // Números de dueños
     owner: [
-        '18252535152',
+        '12508007935',
         ''
     ],
 
     // IDs / LID de dueños
     ownerLid: [
-        '279302511845418',
+        '268006714265778',
         ''
     ],
 
