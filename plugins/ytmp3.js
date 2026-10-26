@@ -1,42 +1,93 @@
+
 import axios from 'axios'
 
 const API = 'https://api.delirius.online/download/ytmp3'
+
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
   const chat = m.key.remoteJid
-  const id = args[0]
+  const input = args.join(' ').trim()
 
-  if (!id) return m.reply('❌ Falta el ID del video.')
+  if (!input) {
+    return m.reply('❌ Falta el ID o enlace del video.')
+  }
 
   try {
-    await m.reply('🎧 Obteniendo el audio...')
+    await sock.sendMessage(chat, {
+      react: { text: '🎧', key: m.key }
+    }).catch(() => {})
 
-    const url = `https://www.youtube.com/watch?v=${id}`
+    // Acepta un ID de YouTube o una URL de YouTube.
+    const videoId = input.match(
+      /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([a-zA-Z0-9_-]{11})/
+    )?.[1]
+
+    const videoUrl = videoId
+      ? `https://www.youtube.com/watch?v=${videoId}`
+      : `https://www.youtube.com/watch?v=${input}`
+
+    await m.reply('⏳ Preparando el audio MP3...')
 
     const { data } = await axios.get(API, {
-      params: { url },
+      params: { url: videoUrl },
       timeout: 60000
     })
 
-    if (!data?.status || !data?.data?.download) {
+    const result = data?.data
+    const downloadUrl = result?.download
+
+    if (!data?.status || !downloadUrl) {
       throw new Error('La API no devolvió un enlace de audio.')
     }
 
-    const result = data.data
+    // Descargar el MP3 y enviarlo como archivo de audio.
+    const response = await axios.get(downloadUrl, {
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    })
+
+    const audio = Buffer.from(response.data)
+
+    if (!audio.length) {
+      throw new Error('El archivo de audio está vacío.')
+    }
 
     await sock.sendMessage(chat, {
-      text: `🎵 *${result.title || 'Audio listo'}*\n📥 ${result.download}`
+      audio,
+      mimetype: 'audio/mpeg',
+      fileName: `${(result.title || 'Pepe-Bot-Audio')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .slice(0, 100)}.mp3`,
+      ptt: false
     }, { quoted: m })
 
+    await sock.sendMessage(chat, {
+      react: { text: '✅', key: m.key }
+    }).catch(() => {})
+
   } catch (error) {
-    console.error('[PLAYAUDIO]', error.message)
-    await m.reply('❌ No se pudo obtener el audio. Intenta más tarde.')
+    console.error(
+      '[PLAYAUDIO]',
+      error.response?.status || '',
+      error.message
+    )
+
+    await sock.sendMessage(chat, {
+      react: { text: '❌', key: m.key }
+    }).catch(() => {})
+
+    await m.reply(
+      '❌ No se pudo enviar el audio. La API o el enlace de descarga pudo fallar.'
+    )
   }
 }
 
 handler.command = ['playaudio']
-handler.help = ['playaudio <id>']
+handler.help = ['playaudio <ID o URL>']
 handler.tags = ['descargas']
 handler.menu = false
 
