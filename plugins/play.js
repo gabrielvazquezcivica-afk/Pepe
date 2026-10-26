@@ -118,9 +118,9 @@ handler.run = async (sock, m, args = []) => {
     // 4. Botones con el mismo sistema original
     const buttons = [
       {
-        id: `.playaudio ${encodeURIComponent(result.download)}`,
-        displayText: '🎵 Descargar audio MP3'
-      },
+  id: `.playaudio ${videoUrl}`,
+  displayText: '🎵 Descargar audio MP3'
+},
       {
         id: `.playmp4 ${encodeURIComponent(videoUrl)}`,
         displayText: '🎬 Descargar video MP4'
