@@ -1,59 +1,50 @@
-
 import axios from 'axios'
+
+const VIDEO_API = ''
 
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
-  const from = m.key.remoteJid
-  const url = args[0]
+  const id = args[0]
 
-  if (!url || !/^https?:\/\//i.test(url)) {
-    return m.reply('❌ No se recibió un enlace de YouTube válido.')
+  if (!id) return m.reply('❌ Falta el ID del video.')
+
+  if (!VIDEO_API) {
+    return m.reply(
+      '🎬 La descarga de video todavía no está configurada: falta una API MP4 compatible.'
+    )
   }
 
   try {
-    await sock.sendMessage(from, {
-      react: { text: '🎬', key: m.key }
-    }).catch(() => {})
+    const url = `https://www.youtube.com/watch?v=${id}`
 
-    const response = await axios.get(
-      'https://api-faa.my.id/faa/ytplayvid',
-      {
-        params: { q: url },
-        timeout: 60000
-      }
-    )
+    const { data } = await axios.get(VIDEO_API, {
+      params: { url },
+      timeout: 60000
+    })
 
-    const data = response.data
-    const video = data?.result?.download_url
+    const download =
+      data?.data?.download ||
+      data?.result?.download_url ||
+      data?.download
 
-    if (!data?.status || !video) {
-      throw new Error('La API no devolvió un enlace de video')
+    if (!download) {
+      throw new Error('La API no devolvió un enlace de video.')
     }
 
-    await sock.sendMessage(from, {
-      video: { url: video },
-      mimetype: 'video/mp4',
-      fileName: 'PEPE-BOT.mp4',
-      caption: '🎬 *Video descargado por PEPE BOT* 🐸'
+    await sock.sendMessage(m.key.remoteJid, {
+      text: `🎬 *Video listo*\n📥 ${download}`
     }, { quoted: m })
 
-    await sock.sendMessage(from, {
-      react: { text: '✅', key: m.key }
-    }).catch(() => {})
-
   } catch (error) {
-    console.error(
-      '[PLAY MP4]',
-      error.response?.status || error.code || error.message
-    )
-
-    await m.reply(
-      '❌ No se pudo descargar el video. Intenta nuevamente.'
-    ).catch(() => {})
+    console.error('[PLAYVIDEO]', error.message)
+    await m.reply('❌ No se pudo obtener el video.')
   }
 }
 
-handler.command = ['playmp4']
+handler.command = ['playvideo']
+handler.help = ['playvideo <id>']
+handler.tags = ['descargas']
+handler.menu = false
 
 export default handler
