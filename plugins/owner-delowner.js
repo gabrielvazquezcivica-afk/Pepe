@@ -3,140 +3,168 @@ import fs from 'fs'
 import path from 'path'
 import config from '../config.js'
 
-const file = path.resolve(process.cwd(), 'database.json')
 const handler = {}
 
-const clean = value =>
-  String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '')
+const file = path.resolve(process.cwd(), 'database/owners.json')
+
+function normalize(value = '') {
+    return String(value).replace(/\D/g, '')
+}
 
 function readDB() {
-  try {
-    const db = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (!db || Array.isArray(db) || typeof db !== 'object') {
-      throw new Error('Formato inválido en database.json')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, JSON.stringify({ owners: [] }, null, 2))
     }
+
+    const db = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!Array.isArray(db.owners)) db.owners = []
     return db
-  } catch (e) {
-    if (e.code === 'ENOENT') return {}
-    throw e
-  }
 }
 
 function saveDB(db) {
-  const temp = `${file}.tmp`
-  fs.writeFileSync(temp, JSON.stringify(db, null, 2))
-  fs.renameSync(temp, file)
+    fs.writeFileSync(file, JSON.stringify(db, null, 2))
 }
 
 function getSender(m) {
-  const jid = m.key.participant || m.key.remoteJid || ''
-  const isLid = jid.endsWith('@lid')
-
-  return {
-    jid,
-    number: isLid ? '' : clean(jid),
-    lid: isLid ? clean(jid) : ''
-  }
+    return m.key?.participant || m.participant || m.key?.remoteJid || ''
 }
 
-function isMainOwner(sender) {
-  const numbers = (config.owner || []).map(clean).filter(Boolean)
-  const lids = (config.ownerLid || []).map(clean).filter(Boolean)
+function isMainOwner(m) {
+    const sender = getSender(m)
+    const senderNumber = normalize(sender.split('@')[0])
+    const senderLid = normalize(
+        m.key?.participantAlt?.split('@')[0] || ''
+    )
 
-  return (
-    (sender.number && numbers.includes(sender.number)) ||
-    (sender.lid && lids.includes(sender.lid))
-  )
+    const numbers = (config.owner || []).filter(Boolean).map(normalize)
+    const lids = (config.ownerLid || []).filter(Boolean).map(normalize)
+
+    return numbers.includes(senderNumber) ||
+        lids.includes(senderNumber) ||
+        numbers.includes(senderLid) ||
+        lids.includes(senderLid)
 }
 
 function getTarget(m, args) {
-  const ctx =
-    m.message?.extendedTextMessage?.contextInfo ||
-    m.message?.imageMessage?.contextInfo ||
-    m.message?.videoMessage?.contextInfo ||
-    {}
+    const context =
+        m.message?.extendedTextMessage?.contextInfo ||
+        m.msg?.contextInfo ||
+        {}
 
-  const jid = ctx.mentionedJid?.[0] || ctx.participant
+    const mentioned =
+        m.mentionedJid?.[0] ||
+        context.mentionedJid?.[0]
 
-  if (jid) {
-    const lid = jid.endsWith('@lid')
-    return { id: clean(jid), jid, lid }
-  }
+    const quoted = context.participant
+    const jid = mentioned || quoted
 
-  const number = clean(args[0])
-  if (!number) return null
+    if (jid) {
+        return {
+            id: normalize(jid.split('@')[0]),
+            jid,
+            lid: jid.endsWith('@lid')
+                ? normalize(jid.split('@')[0])
+                : ''
+        }
+    }
 
-  return {
-    id: number,
-    jid: `${number}@s.whatsapp.net`,
-    lid: false
-  }
+    const number = normalize(args[0] || '')
+    if (!number) return null
+
+    return {
+        id: number,
+        jid: `${number}@s.whatsapp.net`,
+        lid: ''
+    }
 }
 
 handler.run = async (sock, m, args = []) => {
-  const chat = m.key.remoteJid
-  const sender = getSender(m)
+    const from = m.key?.remoteJid
 
-  if (!isMainOwner(sender)) {
-    return m.reply('> SOLO EL OWNER PRINCIPAL PUEDE QUITAR OWNER')
-  }
-
-  const target = getTarget(m, args)
-
-  if (!target?.id) {
-    return m.reply(
-      '> MENCIONA O RESPONDE A UN USUARIO PARA QUITAR OWNER\n' +
-      '> USO: .delowner 521234567890'
-    )
-  }
-
-  const mainNumbers = (config.owner || []).map(clean).filter(Boolean)
-  const mainLids = (config.ownerLid || []).map(clean).filter(Boolean)
-
-  if (
-    (!target.lid && mainNumbers.includes(target.id)) ||
-    (target.lid && mainLids.includes(target.id))
-  ) {
-    return m.reply('> NO PUEDES ELIMINAR AL OWNER PRINCIPAL')
-  }
-
-  try {
-    const db = readDB()
-    if (!Array.isArray(db.pepeOwners)) db.pepeOwners = []
-
-    const before = db.pepeOwners.length
-
-    db.pepeOwners = db.pepeOwners.filter(o => {
-      const id = clean(typeof o === 'string' ? o : o.id)
-      const lid = typeof o === 'object' && Boolean(o.lid)
-      return !(id === target.id && lid === target.lid)
-    })
-
-    if (db.pepeOwners.length === before) {
-      return m.reply('> ESTE USUARIO NO ES OWNER')
+    if (!isMainOwner(m)) {
+        return sock.sendMessage(from, {
+            text: '> ❌ Solo el dueño principal puede usar este comando.'
+        }, { quoted: m })
     }
 
+    const target = getTarget(m, args)
+
+    if (!target?.id) {
+        return sock.sendMessage(from, {
+            text: '> ⚠️ Menciona a un usuario, responde a su mensaje o escribe su número.\n> Ejemplo: .delowner @usuario'
+        }, { quoted: m })
+    }
+
+    const protectedNumbers = (config.owner || [])
+        .filter(Boolean)
+        .map(normalize)
+
+    const protectedLids = (config.ownerLid || [])
+        .filter(Boolean)
+        .map(normalize)
+
+    if (
+        protectedNumbers.includes(target.id) ||
+        protectedLids.includes(target.id)
+    ) {
+        return sock.sendMessage(from, {
+            text: '> ❌ No puedes eliminar al dueño principal.'
+        }, { quoted: m })
+    }
+
+    const db = readDB()
+
+    const index = db.owners.findIndex(owner => {
+        const id = typeof owner === 'string'
+            ? owner
+            : owner.id
+
+        const jid = typeof owner === 'string'
+            ? ''
+            : owner.jid
+
+        const lid = typeof owner === 'string'
+            ? ''
+            : owner.lid
+
+        return normalize(id) === target.id ||
+            (target.jid && jid === target.jid) ||
+            (target.lid && lid === target.lid)
+    })
+
+    if (index === -1) {
+        return sock.sendMessage(from, {
+            text: '> ⚠️ Ese usuario no está registrado como owner.'
+        }, { quoted: m })
+    }
+
+    const removed = db.owners.splice(index, 1)[0]
     saveDB(db)
 
-    const senderTag = sender.number || sender.lid || 'Owner'
+    const removedId = typeof removed === 'string'
+        ? normalize(removed)
+        : normalize(removed.id)
 
-    return sock.sendMessage(chat, {
-      text:
-        '`¡ OWNER ELIMINADO !`\n' +
-        `> @${target.id}\n` +
-        '`RETIRADO POR:`\n' +
-        `> @${senderTag}`,
-      mentions: [...new Set([target.jid, sender.jid])]
+    const removedJid = typeof removed === 'string'
+        ? `${removedId}@s.whatsapp.net`
+        : removed.jid
+
+    const sender = getSender(m)
+    const senderId = normalize(sender.split('@')[0])
+
+    return sock.sendMessage(from, {
+        text: `\`¡ OWNER ELIMINADO !\`\n> @${removedId}\n\n\`RETIRADO POR:\`\n> @${senderId}`,
+        mentions: [removedJid, sender].filter(
+            jid => jid?.includes('@')
+        )
     }, { quoted: m })
-  } catch (e) {
-    console.error('[DELOWNER]', e)
-    return m.reply('> ERROR AL ACTUALIZAR DATABASE.JSON')
-  }
 }
 
 handler.help = ['delowner']
 handler.tags = ['owner']
-handler.command = ['delowner', 'removeowner']
+handler.command = ['delowner']
 handler.menu = true
 
 export default handler
