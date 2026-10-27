@@ -44,7 +44,8 @@ addowner: '👑',
 delowner: '🗑️',
 join: '🚪',
 setpp: '🖼️',
-play: '🎵'
+play: '🎵',
+salir: '👋🏻'
 }
 
 function normalizarTag(tag = '') {
