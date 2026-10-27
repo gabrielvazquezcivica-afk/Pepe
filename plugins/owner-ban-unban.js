@@ -35,10 +35,6 @@ async function react(sock, m, emoji) {
     } catch {}
 }
 
-function getMention(target) {
-    return `@${target.split('@')[0].split(':')[0]}`
-}
-
 async function sendNotice(sock, m, target, text) {
     const number = target.split('@')[0].split(':')[0]
 
@@ -51,10 +47,6 @@ async function sendNotice(sock, m, target, text) {
         { quoted: m }
     )
 }
-
-// ══════════════════════════════════════
-// 🔨 BAN / UNBAN
-// ══════════════════════════════════════
 
 handler.run = async (sock, m, args = []) => {
     const command = String(m.command || '').toLowerCase()
@@ -77,8 +69,8 @@ handler.run = async (sock, m, args = []) => {
         return m.reply(
             '> 🐸 *PEPE BOT — BAN / UNBAN*\n\n' +
             '> Menciona o responde al usuario que deseas administrar.\n\n' +
-            '`.ban — Banear usuario`\n' +
-            '`.unban — Desbanear usuario`\n'
+            '> .ban — Banear usuario\n' +
+            '> .unban — Desbanear usuario'
         )
     }
 
@@ -133,10 +125,14 @@ handler.run = async (sock, m, args = []) => {
                 target,
                 '> 🔨 *Usuario baneado*\n\n' +
                 '> 👤 Usuario: {user}\n' +
-                '> 🚫 Ya no podrá utilizar los comandos.'
+                '> 🚫 Ya no podrá utilizar los comandos de PEPE BOT.'
             )
         }
 
+        // No responder si llega un comando inesperado.
+        return
+    } catch (error) {
+        console.error('[PEPE BAN]', error)
 
         await react(sock, m, '❌')
 
