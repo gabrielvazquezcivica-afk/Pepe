@@ -309,8 +309,9 @@ async function executePlugin(plugin, m, parsed, sock) {
     const { handler, module } = plugin
 
     m.command = parsed.command
-    m.args = parsed.args
-    m.textCommand = parsed.text
+m.args = parsed.args
+m.textCommand = parsed.text
+m.commandMap = plugins
 
     const context = {
         conn: sock,
