@@ -5,7 +5,7 @@ const API_URL = 'https://api-faa.my.id/faa/ytplay?query='
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
-  const chat = m.key.remoteJid
+  const chat = m.chat || m.key?.remoteJid
   const query = args.join(' ').trim()
 
   if (!query) {
