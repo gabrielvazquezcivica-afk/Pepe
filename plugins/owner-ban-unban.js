@@ -2,93 +2,148 @@ import { addBan, removeBan } from '../lib/banlist.js'
 
 const handler = {}
 
-function getTarget(m, args = []) {
-  const message =
-    m.message?.ephemeralMessage?.message || m.message
+function getTarget(m) {
+    const message =
+        m.message?.ephemeralMessage?.message ||
+        m.message?.viewOnceMessage?.message ||
+        m.message
 
-  const context =
-    message?.extendedTextMessage?.contextInfo
+    const context =
+        message?.extendedTextMessage?.contextInfo ||
+        message?.imageMessage?.contextInfo ||
+        message?.videoMessage?.contextInfo
 
-  const quoted = context?.participant
-  const mentioned = context?.mentionedJid?.[0]
+    // Usuario mencionado
+    const mentioned = context?.mentionedJid?.[0]
+    if (mentioned) return mentioned
 
-  if (mentioned) return mentioned
-  if (quoted) return quoted
+    // Usuario al que se respondió
+    const quoted = context?.participant
+    if (quoted) return quoted
 
-  const number = args[0]?.replace(/\D/g, '')
-  return number ? `${number}@s.whatsapp.net` : null
+    return null
 }
 
 async function react(sock, m, emoji) {
-  await sock.sendMessage(m.key.remoteJid, {
-    react: { text: emoji, key: m.key }
-  }).catch(() => {})
+    try {
+        await sock.sendMessage(m.chat, {
+            react: {
+                text: emoji,
+                key: m.key
+            }
+        })
+    } catch {}
 }
 
+function getMention(target) {
+    return `@${target.split('@')[0].split(':')[0]}`
+}
+
+async function sendNotice(sock, m, target, text) {
+    const number = target.split('@')[0].split(':')[0]
+
+    return sock.sendMessage(
+        m.chat,
+        {
+            text: text.replace('{user}', `@${number}`),
+            mentions: [target]
+        },
+        { quoted: m }
+    )
+}
+
+// ══════════════════════════════════════
+// 🔨 BAN / UNBAN
+// ══════════════════════════════════════
+
 handler.run = async (sock, m, args = []) => {
-  const command = String(m.command || '').toLowerCase()
+    const command = String(m.command || '').toLowerCase()
 
-  if (!m.isOwner) {
-    await react(sock, m, '❌')
-    return m.reply(
-      '> 🚫 *Acceso denegado*\n\n' +
-      '> Solo el owner principal o los owners agregados pueden usar este comando.'
-    )
-  }
+    // Solo owners autorizados
+    if (!m.isOwner) {
+        await react(sock, m, '❌')
 
-  const target = getTarget(m, args)
-
-  if (!target) {
-    await react(sock, m, '⚠️')
-    return m.reply(
-      '> 🐸 *PEPE BOT — BAN / UNBAN*\n\n' +
-      '> Menciona o responde al usuario para banear o desbanear.\n\n' +
-      '`.ban — Banear usuario`\n' +
-      '`.unban — Desbanear usuario`\n'
-    )
-  }
-
-  const botNumber = sock.user?.id?.split('@')[0]?.split(':')[0]
-  const targetNumber = target.split('@')[0].split(':')[0]
-
-  if (botNumber && targetNumber === botNumber) {
-    await react(sock, m, '❌')
-    return m.reply('> ❌ No puedes banear ni desbanear al propio bot.')
-  }
-
-  try {
-    if (command === 'unban') {
-      const removed = removeBan(target)
-
-      if (removed) {
-        await react(sock, m, '✅')
         return m.reply(
-          '> ✅ *Usuario desbaneado*\n\n' +
-          `> 👤 Usuario: \`${target}\`\n` +
-          '> Ya puede volver a utilizar los comandos de PEPE BOT.'
+            '> 🚫 *Acceso denegado*\n\n' +
+            '> Solo los owners pueden utilizar este comando.'
         )
-      }
-
-      await react(sock, m, '⚠️')
-      return m.reply(
-        '> ⚠️ Ese usuario no aparece en la lista de baneados.'
-      )
     }
 
-    addBan(target, m.sender || 'owner')
+    const target = getTarget(m)
 
-    await react(sock, m, '🔨')
-    return m.reply(
-      '> 🔨 *Usuario baneado*\n\n' +
-      `> 👤 Usuario: \`${target}\`\n` +
-      '> Se le ha bloqueado el uso de los comandos de PEPE BOT.\n'
-    )
+    if (!target) {
+        await react(sock, m, '⚠️')
 
-  } catch (error) {
-    console.error('[PEPE BAN]', error)
-    await react(sock, m, '❌')
-    return m.reply('> ❌ Ocurrió un error al actualizar la lista de baneados.')
-  }
+        return m.reply(
+            '> 🐸 *PEPE BOT — BAN / UNBAN*\n\n' +
+            '> Menciona o responde al usuario que deseas administrar.\n\n' +
+            '`.ban — Banear usuario`\n' +
+            '`.unban — Desbanear usuario`\n'
+        )
+    }
+
+    const targetNumber = target.split('@')[0].split(':')[0]
+    const botNumber = sock.user?.id?.split('@')[0]?.split(':')[0]
+
+    if (botNumber && targetNumber === botNumber) {
+        await react(sock, m, '❌')
+
+        return m.reply(
+            '> ❌ No puedes banear ni desbanear al propio bot.'
+        )
+    }
+
+    try {
+        if (command === 'unban') {
+            const removed = removeBan(target)
+
+            if (!removed) {
+                await react(sock, m, '⚠️')
+
+                return sendNotice(
+                    sock,
+                    m,
+                    target,
+                    '> ⚠️ *Usuario no baneado*\n\n' +
+                    '> 👤 Usuario: {user}\n' +
+                    '> No aparece en la lista de baneados.'
+                )
+            }
+
+            await react(sock, m, '✅')
+
+            return sendNotice(
+                sock,
+                m,
+                target,
+                '> ✅ *Usuario desbaneado*\n\n' +
+                '> 👤 Usuario: {user}\n' +
+                '> 🟢 Ya puede volver a utilizar los comandos de PEPE BOT.'
+            )
+        }
+
+        if (command === 'ban') {
+            addBan(target, m.sender || 'owner')
+
+            await react(sock, m, '🔨')
+
+            return sendNotice(
+                sock,
+                m,
+                target,
+                '> 🔨 *Usuario baneado*\n\n' +
+                '> 👤 Usuario: {user}\n' +
+                '> 🚫 Ya no podrá utilizar los comandos.'
+            )
+        }
+
+
+        await react(sock, m, '❌')
+
+        return m.reply(
+            '> ❌ Ocurrió un error al administrar el baneo.'
+        )
+    }
 }
 
 handler.command = ['ban', 'unban']
