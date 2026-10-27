@@ -19,19 +19,55 @@ const ordenTags = [
 'nsfw'
 ]
 
-const nombresTags = {
-informacion: '𝐈𝐍𝐅𝐎𝐑𝐌𝐀𝐂𝐈𝐎́𝐍',
-'on-off': '𝐎𝐍 / 𝐎𝐅𝐅',
-frases: '𝐅𝐑𝐀𝐒𝐄𝐒',
-grupo: '𝐆𝐑𝐔𝐏𝐎',
-descargas: '𝐃𝐄𝐒𝐂𝐀𝐑𝐆𝐀𝐒',
-buscador: '𝐁𝐔𝐒𝐂𝐀𝐃𝐎𝐑',
-herramientas: '𝐇𝐄𝐑𝐑𝐀𝐌𝐈𝐄𝐍𝐓𝐀𝐒',
-diversion: '𝐃𝐈𝐕𝐄𝐑𝐒𝐈𝐎́𝐍',
-rpg: '𝐑𝐏𝐆',
-owner: '𝐎𝐖𝐍𝐄𝐑',
-stickers: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒',
-nsfw: '𝐍𝐒𝐅𝐖'
+const categoriasInfo = {
+informacion: { nombre: '𝐈𝐍𝐅𝐎𝐑𝐌𝐀𝐂𝐈𝐎́𝐍', emoji: '📌' },
+'on-off': { nombre: '𝐎𝐍 / 𝐎𝐅𝐅', emoji: '🔌' },
+frases: { nombre: '𝐅𝐑𝐀𝐒𝐄𝐒', emoji: '💭' },
+grupo: { nombre: '𝐆𝐑𝐔𝐏𝐎', emoji: '👥' },
+descargas: { nombre: '𝐃𝐄𝐒𝐂𝐀𝐑𝐆𝐀𝐒', emoji: '📥' },
+buscador: { nombre: '𝐁𝐔𝐒𝐂𝐀𝐃𝐎𝐑', emoji: '🔎' },
+herramientas: { nombre: '𝐇𝐄𝐑𝐑𝐀𝐌𝐈𝐄𝐍𝐓𝐀𝐒', emoji: '🛠️' },
+diversion: { nombre: '𝐃𝐈𝐕𝐄𝐑𝐒𝐈𝐎́𝐍', emoji: '🎮' },
+rpg: { nombre: '𝐑𝐏𝐆', emoji: '⚔️' },
+owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '🌟' },
+stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
+nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' }
+}
+
+const emojisComandos = {
+ping: '🐸',
+p: '🐸',
+velocidad: '⚡',
+owner: '🌟',
+creador: '🌟',
+play: '🐸',
+play2: '🎵',
+ytmp3: '🎧',
+ytmp4: '🎬',
+video: '🎬',
+descargar: '📥',
+grupo: '👥',
+kick: '👢',
+add: '➕',
+promote: '⬆️',
+demote: '⬇️',
+ban: '🚫',
+menu: '📜',
+help: '📖',
+ayuda: '📖',
+sticker: '🖼️',
+s: '🖼️',
+ia: '🤖',
+gpt: '🤖',
+google: '🔎',
+pin: '📌',
+hora: '🕒',
+fecha: '📅',
+rpg: '⚔️',
+balance: '💰',
+daily: '🎁',
+perfil: '👤',
+nsfw: '🔞'
 }
 
 function normalizarTag(tag = '') {
@@ -57,6 +93,19 @@ return indice === -1 ? letra : letras[indice]
 })
 }
 
+function obtenerSaludo() {
+const hora = new Date().getHours()
+
+if (hora >= 5 && hora < 12) return '🌅 ¡𝐁𝐮𝐞𝐧𝐨𝐬 𝐝𝐢́𝐚𝐬!'
+if (hora >= 12 && hora < 19) return '☀️ ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐭𝐚𝐫𝐝𝐞𝐬!'
+return '🌙 ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐧𝐨𝐜𝐡𝐞𝐬!'
+}
+
+function obtenerEmoji(comando) {
+const nombre = String(comando).toLowerCase().trim()
+return emojisComandos[nombre] || '✨'
+}
+
 handler.run = async (sock, m) => {
 try {
 await sock.sendMessage(m.chat, {
@@ -66,7 +115,7 @@ react: { text: '🐸', key: m.key }
 const commandMap = m.commandMap
 
 if (!commandMap || typeof commandMap.values !== 'function') {
-  return m.reply('⚠️ No se pudo cargar el menú dinámico. Revisa index.js.')
+  return m.reply('⚠️ No se pudo cargar el menú. Revisa index.js.')
 }
 
 const categorias = new Map()
@@ -107,6 +156,7 @@ if (!categorias.size) {
 const prefijo = config.PREFIX || '.'
 const nombreBot = config.BOT_NAME || 'PEPE BOT'
 const nombreOwner = config.OWNER_NAME || 'Owner'
+const saludo = obtenerSaludo()
 
 let texto = ''
 
@@ -116,29 +166,37 @@ texto += `       ୨୧ ${nombreBot} ୨୧\n`
 texto += '       ── ⋆⋅☆⋅⋆ ───\n'
 texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
 
-texto += '╭───────「 🐸 」───────╮\n'
-texto += `╰┈➤ 💚 𝐏𝐫𝐞𝐟𝐢𝐣𝐨: ${prefijo}\n`
-texto += `╰┈➤ 💚 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
-texto += `╰┈➤ 💚 𝐂𝐚𝐭𝐞𝐠𝐨𝐫𝐢́𝐚𝐬: ${categorias.size}\n`
-texto += '╰─────────────────────╯\n\n'
+texto += `${saludo}\n`
+texto += `╰┈➤ 👤 𝐔𝐬𝐮𝐚𝐫𝐢𝐨: ${m.pushName || 'Usuario'}\n`
+texto += `╰┈➤ 🌟 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
+texto += `╰┈➤ ⚙️ 𝐏𝐫𝐞𝐟𝐢𝐣𝐨: ${prefijo}\n`
+texto += `╰┈➤ 📚 𝐂𝐚𝐭𝐞𝐠𝐨𝐫𝐢́𝐚𝐬: ${categorias.size}\n`
+texto += '╭──────── ⋆⋅☆⋅⋆ ────────╮\n'
+texto += '       ✧ 𝐋𝐈𝐒𝐓𝐀 𝐃𝐄 𝐂𝐎𝐌𝐀𝐍𝐃𝐎𝐒 ✧\n'
+texto += '╰──────── ⋆⋅☆⋅⋆ ────────╯\n\n'
 
 const tagsOrdenados = [
   ...ordenTags.filter(tag => categorias.has(tag)),
-  ...[...categorias.keys()].filter(tag => !ordenTags.includes(tag)).sort()
+  ...[...categorias.keys()]
+    .filter(tag => !ordenTags.includes(tag))
+    .sort()
 ]
 
 for (const tag of tagsOrdenados) {
   const comandos = [...categorias.get(tag)]
   if (!comandos.length) continue
 
-  const titulo = nombresTags[tag] || letraElegante(tag.toUpperCase())
+  const info = categoriasInfo[tag] || {
+    nombre: letraElegante(tag.toUpperCase()),
+    emoji: '✨'
+  }
 
   texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
-  texto += `       ✧ ${titulo} ✧\n`
+  texto += `┃ ${info.emoji} ${info.nombre}\n`
   texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
 
   for (const comando of comandos) {
-    texto += `╰┈➤ 🐸 ${letraElegante(prefijo + comando)}\n`
+    texto += `╰┈➤ ${obtenerEmoji(comando)} ${letraElegante(prefijo + comando)}\n`
   }
 
   texto += '╰────────── ⋆⋅☆⋅⋆ ──────\n\n'
@@ -147,7 +205,7 @@ for (const tag of tagsOrdenados) {
 texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
 texto += '       ୨୧ 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓 ୨୧\n'
 texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
-texto += '╰┈➤ 𝐆𝐫𝐚𝐜𝐢𝐚𝐬 𝐩𝐨𝐫 𝐮𝐬𝐚𝐫𝐦𝐞 🐸\n'
+texto += '🐸 ¡𝐃𝐢𝐬𝐟𝐫𝐮𝐭𝐚 𝐥𝐨𝐬 𝐜𝐨𝐦𝐚𝐧𝐝𝐨𝐬!\n'
 texto += '─── ⋆⋅☆⋅⋆ ──'
 
 const imagen = path.resolve(
@@ -165,7 +223,11 @@ if (fs.existsSync(imagen)) {
   )
 }
 
-return await sock.sendMessage(m.chat, { text: texto }, { quoted: m })
+return await sock.sendMessage(
+  m.chat,
+  { text: texto },
+  { quoted: m }
+)
 
 } catch (error) {
 console.error('[MENU ERROR]', error)
