@@ -1,20 +1,23 @@
 import config from '../config.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import fs from 'node:fs'
 
 const execFileAsync = promisify(execFile)
 const handler = {}
 
+const cwd = '/home/container'
+
 handler.run = async (sock, m) => {
 const chat = m.chat || m.key?.remoteJid
-const sender = String(m.senderNumber || '').replace(/\D/g, '')
 
+const sender = String(m.senderNumber || '').replace(/\D/g, '')
 const owners = (config.owner || [])
 .filter(Boolean)
 .map(numero => String(numero).replace(/\D/g, ''))
 
-if (!(m.isOwner || owners.includes(sender))) {
+const isOwner = Boolean(m.isOwner || owners.includes(sender))
+
+if (!isOwner) {
 await sock.sendMessage(chat, {
 react: { text: '⛔', key: m.key }
 }).catch(() => {})
@@ -23,26 +26,25 @@ return m.reply('> 🚫 Solo los owners pueden actualizar el bot.')
 
 }
 
-const cwd = '/home/container'
-
 try {
 await sock.sendMessage(chat, {
 react: { text: '🔄', key: m.key }
 }).catch(() => {})
 
 await sock.sendMessage(chat, {
-  text: '> 🐸 *PEPE BOT — ACTUALIZADOR*\n\n> 🔍 Comprobando actualizaciones...'
+  text:
+    '> 🐸 *PEPE BOT — ACTUALIZADOR*\n\n' +
+    '> 🔍 Comprobando el repositorio...'
 })
 
-if (!fs.existsSync(`${cwd}/.git`)) {
-  return sock.sendMessage(chat, {
-    text:
-      '> ⚠️ No encontré el historial Git del proyecto.\n' +
-      '> Este hosting puede tener los archivos subidos sin Git.\n' +
-      '> No se modificó ningún archivo.'
-  }, { quoted: m })
-}
+// Comprobar que Git esté disponible en el proyecto
+await execFileAsync(
+  'git',
+  ['rev-parse', '--is-inside-work-tree'],
+  { cwd, timeout: 15000 }
+)
 
+// Detectar la rama actual
 const { stdout: ramaOutput } = await execFileAsync(
   'git',
   ['branch', '--show-current'],
@@ -52,71 +54,85 @@ const { stdout: ramaOutput } = await execFileAsync(
 const rama = ramaOutput.trim()
 
 if (!rama) {
-  return m.reply('> ⚠️ No pude identificar la rama del repositorio.')
-}
-
-await execFileAsync(
-  'git',
-  ['fetch', 'origin'],
-  { cwd, timeout: 60000 }
-)
-
-const { stdout: estado } = await execFileAsync(
-  'git',
-  ['status', '--porcelain'],
-  { cwd, timeout: 15000 }
-)
-
-if (estado.trim()) {
   return sock.sendMessage(chat, {
     text:
-      '> ⚠️ Hay archivos modificados en el servidor.\n' +
-      '> Para proteger tus cambios, no se aplicó la actualización.\n' +
-      '> Guarda o respalda esos cambios antes de intentarlo de nuevo.'
+      '> ❌ No pude identificar la rama actual.\n' +
+      '> Revisa la configuración Git del servidor.'
   }, { quoted: m })
 }
 
-const { stdout: comparacion } = await execFileAsync(
+// Obtener los últimos cambios del remoto
+await execFileAsync(
+  'git',
+  ['fetch', 'origin'],
+  { cwd, timeout: 90000 }
+)
+
+// Confirmar que existe la rama remota
+await execFileAsync(
+  'git',
+  ['rev-parse', '--verify', `origin/${rama}`],
+  { cwd, timeout: 15000 }
+)
+
+// Contar commits que llegarán desde GitHub
+const { stdout: conteoOutput } = await execFileAsync(
   'git',
   ['rev-list', '--count', `HEAD..origin/${rama}`],
   { cwd, timeout: 15000 }
 )
 
-const pendientes = Number(comparacion.trim())
+const commitsNuevos = Number(conteoOutput.trim())
 
-if (!pendientes) {
+// Detectar si hay diferencias locales o archivos nuevos
+const { stdout: estadoOutput } = await execFileAsync(
+  'git',
+  ['status', '--porcelain'],
+  { cwd, timeout: 15000 }
+)
+
+const hayCambiosLocales = Boolean(estadoOutput.trim())
+
+if (commitsNuevos === 0 && !hayCambiosLocales) {
+  await sock.sendMessage(chat, {
+    react: { text: '✅', key: m.key }
+  }).catch(() => {})
+
   return sock.sendMessage(chat, {
     text: '> ✅ PEPE BOT ya está actualizado. No hay cambios nuevos.'
   }, { quoted: m })
 }
 
-const { stdout: archivos } = await execFileAsync(
-  'git',
-  ['diff', '--name-only', 'HEAD', `origin/${rama}`],
-  { cwd, timeout: 15000 }
-)
+await sock.sendMessage(chat, {
+  text:
+    '> ⚠️ Se reemplazarán los cambios locales y archivos no rastreados.\n' +
+    '> 📥 Sincronizando con GitHub...'
+})
 
-const packageCambio = archivos
-  .split('\n')
-  .some(archivo => archivo.trim() === 'package.json')
-
+// Reemplazar el estado de los archivos rastreados
 await execFileAsync(
   'git',
-  ['merge', '--ff-only', `origin/${rama}`],
-  { cwd, timeout: 60000 }
+  ['reset', '--hard', `origin/${rama}`],
+  { cwd, timeout: 90000 }
 )
 
-if (packageCambio) {
-  await sock.sendMessage(chat, {
-    text: '> 📦 Cambió package.json. Instalando dependencias...'
-  })
+// Eliminar archivos/carpetas no rastreados por Git
+await execFileAsync(
+  'git',
+  ['clean', '-fd'],
+  { cwd, timeout: 90000 }
+)
 
-  await execFileAsync(
-    'npm',
-    ['install', '--no-fund', '--no-audit'],
-    { cwd, timeout: 180000 }
-  )
-}
+// Instalar las dependencias definidas por el repositorio
+await sock.sendMessage(chat, {
+  text: '> 📦 Instalando dependencias...'
+})
+
+await execFileAsync(
+  'npm',
+  ['install', '--no-fund', '--no-audit'],
+  { cwd, timeout: 240000 }
+)
 
 await sock.sendMessage(chat, {
   react: { text: '✅', key: m.key }
@@ -125,9 +141,9 @@ await sock.sendMessage(chat, {
 return sock.sendMessage(chat, {
   text:
     '> ✅ *ACTUALIZACIÓN COMPLETADA*\n\n' +
-    `> 📥 Commits nuevos: ${pendientes}\n` +
     `> 🌿 Rama: ${rama}\n` +
-    `> 📦 Dependencias: ${packageCambio ? 'actualizadas' : 'sin cambios'}\n\n` +
+    `> 📥 Commits nuevos: ${commitsNuevos}\n` +
+    '> 📦 Dependencias instaladas.\n\n' +
     '> 🔄 Reinicia el servidor desde el panel para cargar los cambios.'
 }, { quoted: m })
 
@@ -138,7 +154,7 @@ await sock.sendMessage(chat, {
   text:
     '> ❌ No se pudo completar la actualización.\n' +
     '> Revisa la consola del servidor para ver el error.\n' +
-    '> No uses reset ni fuerces cambios si tienes modificaciones propias.'
+    '> Si Git no tiene configurado origin o la rama remota, debes corregirlo antes de actualizar.'
 }, { quoted: m }).catch(() => {})
 
 }
