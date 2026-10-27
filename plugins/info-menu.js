@@ -1,4 +1,3 @@
-
 import config from '../config.js'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -32,7 +31,8 @@ const categoriasInfo = {
   rpg: { nombre: '𝐑𝐏𝐆', emoji: '⚔️' },
   owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '👑' },
   stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
-  nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' }
+  nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' },
+  otros: { nombre: '𝐎𝐓𝐑𝐎𝐒', emoji: '✨' }
 }
 
 function normalizarTag(tag = '') {
@@ -68,24 +68,45 @@ function obtenerSaludo() {
   return '🌙 ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐧𝐨𝐜𝐡𝐞𝐬!'
 }
 
-// Alterna los emojis: 🐸, 🌟, 🐸, 🌟...
 function obtenerEmoji(indice = 0) {
   return indice % 2 === 0 ? '🐸' : '🌟'
 }
 
+function obtenerComandos(plugin) {
+  const origen = Array.isArray(plugin.help)
+    ? plugin.help
+    : Array.isArray(plugin.command)
+      ? plugin.command
+      : typeof plugin.help === 'string'
+        ? [plugin.help]
+        : typeof plugin.command === 'string'
+          ? [plugin.command]
+          : []
+
+  return origen
+    .filter(comando => typeof comando === 'string')
+    .map(comando => comando.trim().split(/\s+/)[0])
+    .filter(Boolean)
+}
+
 handler.run = async (sock, m) => {
+  const chat = m.chat || m.key?.remoteJid
+
   try {
-    await sock.sendMessage(m.chat, {
+    await sock.sendMessage(chat, {
       react: { text: '🐸', key: m.key }
     }).catch(() => {})
 
     const commandMap = m.commandMap
 
     if (!commandMap || typeof commandMap.values !== 'function') {
-      return m.reply('> ⚠️ No se pudo cargar el menú. Revisa index.js.')
+      return m.reply(
+        '> ⚠️ No se recibió el registro de comandos. Revisa index.js.'
+      )
     }
 
     const categorias = new Map()
+    const vistos = new Set()
 
     for (const entradas of commandMap.values()) {
       for (const entrada of Array.isArray(entradas) ? entradas : [entradas]) {
@@ -93,36 +114,34 @@ handler.run = async (sock, m) => {
 
         if (!plugin || plugin.menu === false) continue
 
-        const tags = Array.isArray(plugin.tags)
+        const comandos = obtenerComandos(plugin)
+        if (!comandos.length) continue
+
+        const tags = Array.isArray(plugin.tags) && plugin.tags.length
           ? plugin.tags
           : ['otros']
 
-        const comandos = Array.isArray(plugin.help)
-          ? plugin.help
-          : Array.isArray(plugin.command)
-            ? plugin.command
-            : []
-
-        if (!comandos.length) continue
-
         for (const tagOriginal of tags) {
           const tag = normalizarTag(tagOriginal)
+          if (!tag) continue
 
           if (!categorias.has(tag)) {
             categorias.set(tag, new Set())
           }
 
           for (const comando of comandos) {
-            if (typeof comando === 'string' && comando.trim()) {
-              categorias.get(tag).add(comando.trim())
-            }
+            const clave = `${tag}:${comando.toLowerCase()}`
+
+            if (vistos.has(clave)) continue
+            vistos.add(clave)
+            categorias.get(tag).add(comando)
           }
         }
       }
     }
 
     if (!categorias.size) {
-      return m.reply('> 🐸 No encontré comandos para mostrar.')
+      return m.reply('> 🐸 No encontré comandos registrados para mostrar.')
     }
 
     const prefijo = config.PREFIX || '.'
@@ -160,7 +179,6 @@ handler.run = async (sock, m) => {
 
     for (const tag of tagsOrdenados) {
       const comandos = [...categorias.get(tag)]
-
       if (!comandos.length) continue
 
       const info = categoriasInfo[tag] || {
@@ -192,7 +210,7 @@ handler.run = async (sock, m) => {
 
     if (fs.existsSync(imagen)) {
       return await sock.sendMessage(
-        m.chat,
+        chat,
         {
           image: fs.readFileSync(imagen),
           caption: texto
@@ -202,7 +220,7 @@ handler.run = async (sock, m) => {
     }
 
     return await sock.sendMessage(
-      m.chat,
+      chat,
       { text: texto },
       { quoted: m }
     )
