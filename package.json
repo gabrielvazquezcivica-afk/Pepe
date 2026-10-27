@@ -11,6 +11,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "latest",
     "chalk": "^5.4.1",
+    "jimp": "^1.6.0",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   }
