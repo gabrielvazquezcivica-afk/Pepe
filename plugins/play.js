@@ -1,3 +1,4 @@
+
 import axios from 'axios'
 
 const API_URL = 'https://api-faa.my.id/faa/ytplay?query='
@@ -8,12 +9,15 @@ handler.run = async (sock, m, args = []) => {
   const chat = m.chat || m.key?.remoteJid
   const query = args.join(' ').trim()
 
+  if (!chat) return
+
   if (!query) {
-    return m.reply(
-      '🐸 *PEPE BOT — PLAY*\n\n' +
-      '🎵 Escribe el nombre de una canción.\n\n' +
-      '📌 *Ejemplo:* .play IMU Jorge Cuellar'
-    )
+    return sock.sendMessage(chat, {
+      text:
+        '> 🐸 *PEPE BOT — PLAY*\n\n' +
+        '> 🎵 Escribe el nombre de una canción.\n\n' +
+        '> 📌 *Ejemplo:* .play IMU Jorge Cuellar'
+    }, { quoted: m })
   }
 
   try {
@@ -21,57 +25,75 @@ handler.run = async (sock, m, args = []) => {
       react: { text: '🔎', key: m.key }
     }).catch(() => {})
 
-    // Buscar canción con la API de Faa.
+    console.log(`[PEPE PLAY] Buscando: ${query}`)
+
     const response = await axios.get(
       API_URL + encodeURIComponent(query),
       {
-        timeout: 60000,
+        timeout: 45000,
         headers: { Accept: 'application/json' }
       }
     )
 
     const data = response.data
+    const song = data?.result
 
-    if (!data?.status || !data?.result) {
-      throw new Error('La API no encontró la canción.')
+    if (!song) {
+      throw new Error('La API no devolvió resultados.')
     }
-
-    const song = data.result
 
     if (!song.mp3) {
       throw new Error('La API no devolvió el enlace MP3.')
     }
 
-    const title = String(song.title || 'Canción')
-      .replace(/[\r\n]/g, ' ')
-      .slice(0, 180)
+    const limpiar = (valor, fallback = 'No disponible') =>
+      String(valor || fallback).replace(/[\r\n]/g, ' ').slice(0, 250)
+
+    const titulo = limpiar(song.title, 'Canción')
+    const artista = limpiar(song.author)
+    const duracion = limpiar(song.duration_timestamp || song.duration)
+    const vistas = Number(song.views || 0).toLocaleString('es-MX')
+    const publicado = limpiar(song.published)
+    const enlace = limpiar(song.url)
 
     const caption =
       `╭━━〔 🐸 *PEPE BOT* 〕━━⬣\n` +
-      `┃ 🎵 *Título:* ${song.title || 'Desconocido'}\n` +
-      `┃ 👤 *Artista:* ${song.author || 'Desconocido'}\n` +
-      `┃ ⏱️ *Duración:* ${song.duration_timestamp || 'Desconocida'}\n` +
-      `┃ 👁️ *Vistas:* ${Number(song.views || 0).toLocaleString('es-MX')}\n` +
-      `┃ 📅 *Publicado:* ${song.published || 'Desconocido'}\n` +
-      `┃ 🔗 *YouTube:* ${song.url || 'No disponible'}\n` +
+      `┃ 🎵 *Título:* ${titulo}\n` +
+      `┃ 👤 *Artista:* ${artista}\n` +
+      `┃ ⏱️ *Duración:* ${duracion}\n` +
+      `┃ 👁️ *Vistas:* ${vistas}\n` +
+      `┃ 📅 *Publicado:* ${publicado}\n` +
+      `┃ 🔗 *YouTube:* ${enlace}\n` +
       `╰━━━━━━━━━━━━⬣\n\n` +
-      `⏳ *Enviando audio...*`
+      `> 🎧 Preparando tu audio...`
 
-    // Enviar ficha de la canción.
+    // Enviar la ficha de la canción.
     if (song.thumbnail) {
-      await sock.sendMessage(chat, {
-        image: { url: song.thumbnail },
-        caption
-      }, { quoted: m })
+      try {
+        await sock.sendMessage(chat, {
+          image: { url: song.thumbnail },
+          caption
+        }, { quoted: m })
+      } catch (error) {
+        console.error('[PEPE PLAY] Error enviando miniatura:', error.message)
+
+        await sock.sendMessage(chat, {
+          text: caption
+        }, { quoted: m })
+      }
     } else {
-      await m.reply(caption)
+      await sock.sendMessage(chat, {
+        text: caption
+      }, { quoted: m })
     }
 
-    // Descargar y enviar el audio MP3.
+    // Enviar el audio.
+    console.log(`[PEPE PLAY] Enviando audio: ${titulo}`)
+
     await sock.sendMessage(chat, {
       audio: { url: song.mp3 },
       mimetype: 'audio/mpeg',
-      fileName: `${title}.mp3`,
+      fileName: `${titulo.replace(/[\\/:*?"<>|]/g, '').slice(0, 100)}.mp3`,
       ptt: false
     }, { quoted: m })
 
@@ -81,7 +103,7 @@ handler.run = async (sock, m, args = []) => {
 
   } catch (error) {
     console.error(
-      '[PEPE PLAY]',
+      '[PEPE PLAY ERROR]',
       error.response?.status || '',
       error.message
     )
@@ -90,11 +112,12 @@ handler.run = async (sock, m, args = []) => {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
-    await m.reply(
-      '❌ *No se pudo enviar la canción.*\n\n' +
-      'Puede que la API esté caída o que el enlace de audio no funcione. ' +
-      'Inténtalo de nuevo más tarde.'
-    ).catch(() => {})
+    await sock.sendMessage(chat, {
+      text:
+        '> ❌ *No se pudo completar la descarga.*\n\n' +
+        '> Puede que la API esté caída o que el enlace de audio haya fallado.\n' +
+        '> Inténtalo de nuevo más tarde.'
+    }, { quoted: m }).catch(() => {})
   }
 }
 
