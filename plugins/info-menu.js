@@ -29,45 +29,22 @@ buscador: { nombre: '𝐁𝐔𝐒𝐂𝐀𝐃𝐎𝐑', emoji: '🔎' },
 herramientas: { nombre: '𝐇𝐄𝐑𝐑𝐀𝐌𝐈𝐄𝐍𝐓𝐀𝐒', emoji: '🛠️' },
 diversion: { nombre: '𝐃𝐈𝐕𝐄𝐑𝐒𝐈𝐎́𝐍', emoji: '🎮' },
 rpg: { nombre: '𝐑𝐏𝐆', emoji: '⚔️' },
-owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '🌟' },
+owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '👑' },
 stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
 nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' }
 }
 
+// Emojis personalizados de tus comandos
 const emojisComandos = {
-ping: '🐸',
 p: '🐸',
-velocidad: '⚡',
-owner: '🌟',
-creador: '🌟',
-play: '🐸',
-play2: '🎵',
-ytmp3: '🎧',
-ytmp4: '🎬',
-video: '🎬',
-descargar: '📥',
-grupo: '👥',
-kick: '👢',
-add: '➕',
-promote: '⬆️',
-demote: '⬇️',
-ban: '🚫',
 menu: '📜',
-help: '📖',
-ayuda: '📖',
-sticker: '🖼️',
-s: '🖼️',
-ia: '🤖',
-gpt: '🤖',
-google: '🔎',
-pin: '📌',
-hora: '🕒',
-fecha: '📅',
-rpg: '⚔️',
-balance: '💰',
-daily: '🎁',
-perfil: '👤',
-nsfw: '🔞'
+ban: '🔨',
+unban: '🔓',
+addowner: '👑',
+delowner: '🗑️',
+join: '🚪',
+setpp: '🖼️',
+play: '🎵'
 }
 
 function normalizarTag(tag = '') {
@@ -126,7 +103,10 @@ for (const entradas of commandMap.values()) {
 
     if (!plugin || plugin.menu === false) continue
 
-    const tags = Array.isArray(plugin.tags) ? plugin.tags : ['otros']
+    const tags = Array.isArray(plugin.tags)
+      ? plugin.tags
+      : ['otros']
+
     const comandos = Array.isArray(plugin.help)
       ? plugin.help
       : Array.isArray(plugin.command)
@@ -138,7 +118,9 @@ for (const entradas of commandMap.values()) {
     for (const tagOriginal of tags) {
       const tag = normalizarTag(tagOriginal)
 
-      if (!categorias.has(tag)) categorias.set(tag, new Set())
+      if (!categorias.has(tag)) {
+        categorias.set(tag, new Set())
+      }
 
       for (const comando of comandos) {
         if (typeof comando === 'string' && comando.trim()) {
@@ -157,6 +139,10 @@ const prefijo = config.PREFIX || '.'
 const nombreBot = config.BOT_NAME || 'PEPE BOT'
 const nombreOwner = config.OWNER_NAME || 'Owner'
 const saludo = obtenerSaludo()
+const nombreUsuario = m.pushName || 'Usuario'
+
+const totalComandos = [...categorias.values()]
+  .reduce((total, comandos) => total + comandos.size, 0)
 
 let texto = ''
 
@@ -167,10 +153,10 @@ texto += '       ── ⋆⋅☆⋅⋆ ───\n'
 texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
 
 texto += `${saludo}\n`
-texto += `╰┈➤ 👤 𝐔𝐬𝐮𝐚𝐫𝐢𝐨: ${m.pushName || 'Usuario'}\n`
-texto += `╰┈➤ 🌟 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
+texto += `╰┈➤ 👤 𝐔𝐬𝐮𝐚𝐫𝐢𝐨: ${nombreUsuario}\n`
+texto += `╰┈➤ 👑 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
 texto += `╰┈➤ ⚙️ 𝐏𝐫𝐞𝐟𝐢𝐣𝐨: ${prefijo}\n`
-texto += `╰┈➤ 📚 𝐂𝐚𝐭𝐞𝐠𝐨𝐫𝐢́𝐚𝐬: ${categorias.size}\n`
+texto += `╰┈➤ 📚 𝐂𝐨𝐦𝐚𝐧𝐝𝐨𝐬: ${totalComandos}\n`
 texto += '╭──────── ⋆⋅☆⋅⋆ ────────╮\n'
 texto += '       ✧ 𝐋𝐈𝐒𝐓𝐀 𝐃𝐄 𝐂𝐎𝐌𝐀𝐍𝐃𝐎𝐒 ✧\n'
 texto += '╰──────── ⋆⋅☆⋅⋆ ────────╯\n\n'
@@ -184,6 +170,7 @@ const tagsOrdenados = [
 
 for (const tag of tagsOrdenados) {
   const comandos = [...categorias.get(tag)]
+
   if (!comandos.length) continue
 
   const info = categoriasInfo[tag] || {
@@ -203,7 +190,7 @@ for (const tag of tagsOrdenados) {
 }
 
 texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
-texto += '       ୨୧ 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓 ୨୧\n'
+texto += `       ୨୧ ${nombreBot} ୨୧\n`
 texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
 texto += '🐸 ¡𝐃𝐢𝐬𝐟𝐫𝐮𝐭𝐚 𝐥𝐨𝐬 𝐜𝐨𝐦𝐚𝐧𝐝𝐨𝐬!\n'
 texto += '─── ⋆⋅☆⋅⋆ ──'
