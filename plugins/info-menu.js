@@ -19,19 +19,19 @@ const ordenTags = [
 ]
 
 const nombresTags = {
-    informacion: '🐸 INFORMACIÓN 🐸',
-    'on-off': '🔌 ON - OFF 🔌',
-    frases: '💬 FRASES 💬',
-    grupo: '👥 GRUPO 👥',
-    descargas: '📥 DESCARGAS 📥',
-    buscador: '🔎 BUSCADOR 🔎',
-    herramientas: '🛠️ HERRAMIENTAS 🛠️',
-    diversion: '🎉 DIVERSIÓN 🎉',
-    rpg: '⚔️ RPG ⚔️',
-    owner: '👑 OWNER 👑',
-    stickers: '🎨 STICKERS 🎨',
-    nsfw: '🔞 NSFW 🔞',
-    otros: '🐸 OTROS COMANDOS 🐸'
+    informacion: '𝙄𝙉𝙁𝙊𝙍𝙈𝘼𝘾𝙄𝙊𝙉',
+    'on-off': '𝙊𝙉 - 𝙊𝙁𝙁',
+    frases: '𝙁𝙍𝘼𝙎𝙀𝙎',
+    grupo: '𝙂𝙍𝙐𝙋𝙊',
+    descargas: '𝘿𝙀𝙎𝘾𝘼𝙍𝙂𝘼𝙎',
+    buscador: '𝘽𝙐𝙎𝘾𝘼𝘿𝙊𝙍',
+    herramientas: '𝙃𝙀𝙍𝙍𝘼𝙈𝙄𝙀𝙉𝙏𝘼𝙎',
+    diversion: '𝘿𝙄𝙑𝙀𝙍𝙎𝙄𝙊́𝙉',
+    rpg: '𝙍𝙋𝙂',
+    owner: '𝙊𝙒𝙉𝙀𝙍',
+    stickers: '𝙎𝙏𝙄𝘾𝙆𝙀𝙍𝙎',
+    nsfw: '𝙉𝙎𝙁𝙒',
+    otros: '𝙊𝙏𝙍𝙊𝙎'
 }
 
 const emojis = ['💚', '🌟']
@@ -45,6 +45,7 @@ function normalizarTag(tag = 'otros') {
 
     const alias = {
         info: 'informacion',
+        información: 'informacion',
         grupo: 'grupo',
         grupos: 'grupo',
         group: 'grupo',
@@ -56,19 +57,26 @@ function normalizarTag(tag = 'otros') {
         herramienta: 'herramientas',
         tools: 'herramientas',
         sticker: 'stickers',
-        stickers: 'stickers',
         owners: 'owner'
     }
 
     return alias[limpio] || limpio
 }
 
+// Convierte letras normales a negrita Unicode.
+function negrita(texto) {
+    const normal = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    const bold = '𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵'
+
+    return [...String(texto)].map(letra => {
+        const index = normal.indexOf(letra)
+        return index === -1 ? letra : bold[index]
+    }).join('')
+}
+
 handler.run = async (sock, m) => {
     await sock.sendMessage(m.chat, {
-        react: {
-            text: '📜',
-            key: m.key
-        }
+        react: { text: '📜', key: m.key }
     }).catch(() => {})
 
     const commandMap = m.commandMap
@@ -76,7 +84,7 @@ handler.run = async (sock, m) => {
     if (!commandMap || typeof commandMap.values !== 'function') {
         return m.reply(
             '❌ No se pudo obtener la lista de plugins.\n' +
-            'Agrega `m.commandMap = plugins` en executePlugin() de tu index.js.'
+            'Agrega m.commandMap = plugins en executePlugin() de index.js.'
         )
     }
 
@@ -87,7 +95,6 @@ handler.run = async (sock, m) => {
     const categorias = new Map()
     const comandosVistos = new Set()
 
-    // Reunir comandos de todos los plugins.
     for (const entries of commandMap.values()) {
         const lista = Array.isArray(entries) ? entries : [entries]
 
@@ -102,10 +109,7 @@ handler.run = async (sock, m) => {
             const tag = normalizarTag(tags[0] || 'otros')
 
             if (!categorias.has(tag)) {
-                categorias.set(tag, {
-                    tag,
-                    comandos: []
-                })
+                categorias.set(tag, { tag, comandos: [] })
             }
 
             const help = plugin.help ?? plugin.command ?? []
@@ -126,7 +130,6 @@ handler.run = async (sock, m) => {
         }
     }
 
-    // Ordenar según ordenTags; las categorías desconocidas quedan al final.
     const ordenNormalizado = ordenTags.map(normalizarTag)
 
     const grupos = [...categorias.values()]
@@ -135,31 +138,27 @@ handler.run = async (sock, m) => {
             const ia = ordenNormalizado.indexOf(a.tag)
             const ib = ordenNormalizado.indexOf(b.tag)
 
-            const posA = ia === -1 ? Infinity : ia
-            const posB = ib === -1 ? Infinity : ib
-
-            return posA - posB
+            return (ia === -1 ? Infinity : ia) -
+                   (ib === -1 ? Infinity : ib)
         })
 
     let total = 0
 
     let texto =
-        `╭━━〔 🐸 ${nombreBot} 〕━━╮\n` +
+        `╭━━〔 🐸 ${negrita(nombreBot)} 〕━━╮\n` +
         `┃\n` +
-        `┃ 💚 Prefijo: ${prefijo}\n` +
-        `┃ 👑 Owner: ${nombreOwner}\n` +
-        `┃ 📚 Lista de comandos\n` +
+        `┃ 💚 𝗣𝗿𝗲𝗳𝗶𝗷𝗼: ${prefijo}\n` +
+        `┃ 👑 𝗢𝘄𝗻𝗲𝗿: ${negrita(nombreOwner)}\n` +
         `┃\n`
 
     for (const grupo of grupos) {
-        const titulo =
-            nombresTags[grupo.tag] ||
-            `🐸 ${grupo.tag.toUpperCase()} 🐸`
+        const titulo = nombresTags[grupo.tag] ||
+            `𝙊𝙏𝙍𝙊𝙎: ${grupo.tag.toUpperCase()}`
 
         texto += `┣━━〔 ${titulo} 〕\n`
 
         grupo.comandos.forEach((comando, index) => {
-            texto += `┃ ${emojis[index % emojis.length]} ${prefijo}${comando}\n`
+            texto += `┃ ${emojis[index % emojis.length]} ${negrita(comando)}\n`
             total++
         })
 
@@ -168,19 +167,14 @@ handler.run = async (sock, m) => {
 
     texto +=
         `┣━━━━━━━━━━━━━━━━━━\n` +
-        `┃ 📊 Total: ${total} comandos\n` +
-        `╰━━〔 💚 ${nombreBot} 〕━━╯\n` +
-        `> 🌟 Gracias por usarme.`
+        `┃ 📊 𝗧𝗼𝘁𝗮𝗹: ${negrita(String(total))} 𝗰𝗼𝗺𝗮𝗻𝗱𝗼𝘀\n` +
+        `╰━━〔 💚 ${negrita(nombreBot)} 〕━━╯\n` +
+        `> 🌟 𝗚𝗿𝗮𝗰𝗶𝗮𝘀 𝗽𝗼𝗿 𝘂𝘀𝗮𝗿𝗺𝗲.`
 
     return sock.sendMessage(
         m.chat,
-        {
-            text: texto,
-            mentions: m.sender ? [m.sender] : []
-        },
-        {
-            quoted: m
-        }
+        { text: texto },
+        { quoted: m }
     )
 }
 
