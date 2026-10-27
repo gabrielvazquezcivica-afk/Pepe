@@ -47,7 +47,8 @@ setpp: '🖼️',
 play: '🎵',
 salir: '👋🏻',
 reiniciar: '🔁',
-update: '⬆️'
+update: '⬆️',
+bc: '🗒️'
 }
 
 function normalizarTag(tag = '') {
