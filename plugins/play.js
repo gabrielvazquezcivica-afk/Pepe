@@ -1,157 +1,163 @@
 import axios from 'axios'
+import yts from 'yt-search'
 
-const SEARCH_API = 'https://api.delirius.online/search/ytsearch'
-const AUDIO_API = 'https://api.delirius.online/download/ytmp3'
+const LIMIT_MB = 200
 
 const handler = {}
 
 handler.run = async (sock, m, args = []) => {
   const chat = m.key.remoteJid
-  const query = args.join(' ').trim()
+  const input = args.join(' ').trim()
+  const command = String(m.command || '').toLowerCase()
 
-  if (!query) {
+  if (!input) {
     return m.reply(
-      '🐸 *PEPE BOT — PLAY*\n\n' +
-      'Escribe el nombre de una canción.\n' +
-      'Ejemplo: .play Morad normal'
+      '🐸 *PEPE BOT — YOUTUBE*\n\n' +
+      '🎵 .play nombre de la canción\n' +
+      '🎬 .play2 nombre del video\n\n' +
+      'También puedes enviar un enlace de YouTube.'
     )
   }
 
   try {
     await sock.sendMessage(chat, {
-      react: { text: '🎵', key: m.key }
+      react: { text: '🔎', key: m.key }
     }).catch(() => {})
 
-    // Buscar la canción.
-    const searchResponse = await axios.get(SEARCH_API, {
-      params: { q: query },
-      timeout: 60000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    })
+    // Buscar por nombre o aceptar un enlace.
+    let video
 
-    const searchData = searchResponse.data
-    const songs = searchData?.data
-
-    if (
-      !searchData?.status ||
-      !Array.isArray(songs) ||
-      !songs.length
-    ) {
-      throw new Error('No se encontraron canciones.')
+    if (/youtu\.be\/|youtube\.com\//i.test(input)) {
+      const result = await yts({ videoId: getVideoId(input) })
+      video = result
+    } else {
+      const result = await yts(input)
+      video = result?.videos?.[0]
     }
 
-    const song = songs[0]
-    const videoUrl =
-      song.url ||
-      song.videoUrl ||
-      (song.videoId
-        ? `https://www.youtube.com/watch?v=${song.videoId}`
-        : null)
-
-    if (!videoUrl) {
-      throw new Error('El resultado no contiene un enlace de YouTube.')
+    if (!video?.url) {
+      throw new Error('No se encontraron resultados de YouTube.')
     }
 
-    await m.reply(
-      `🐸 *PEPE BOT — PLAY*\n\n` +
-      `🎵 *Título:* ${song.title || query}\n` +
-      `👤 *Autor:* ${song.author?.name || song.author || 'Desconocido'}\n` +
-      `⏱️ *Duración:* ${song.duration?.timestamp || song.duration || 'No disponible'}\n\n` +
-      `⏳ Preparando audio...`
-    )
-
-    // Obtener el enlace MP3.
-    const audioResponse = await axios.get(AUDIO_API, {
-      params: { url: videoUrl },
-      timeout: 60000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    })
-
-    const result = audioResponse.data?.data
-    const downloadUrl = result?.download
-
-    if (!audioResponse.data?.status || !downloadUrl) {
-      throw new Error('La API no devolvió el enlace de audio.')
-    }
-
-    // Descargar el archivo real.
-    const fileResponse = await axios.get(downloadUrl, {
-      responseType: 'arraybuffer',
-      timeout: 120000,
-      maxRedirects: 5,
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-        Accept: 'audio/mpeg, audio/*, application/octet-stream, */*'
-      }
-    })
-
-    const audio = Buffer.from(fileResponse.data)
-    const contentType = String(
-      fileResponse.headers['content-type'] || ''
-    ).toLowerCase()
-
-    if (
-      !audio.length ||
-      contentType.includes('text/html') ||
-      contentType.includes('application/json')
-    ) {
-      throw new Error(
-        `El enlace no devolvió audio. Tipo: ${contentType || 'desconocido'}`
-      )
-    }
-
-    // Validar que sea MP3.
-    const isMp3 =
-      audio.length >= 3 &&
-      (
-        audio.toString('ascii', 0, 3) === 'ID3' ||
-        (audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0)
-      )
-
-    if (!isMp3) {
-      throw new Error('El archivo recibido no es un MP3 válido.')
-    }
-
-    const title = String(result.title || song.title || query)
+    const title = String(video.title || 'Video')
       .replace(/[\\/:*?"<>|]/g, '')
-      .slice(0, 100)
+      .slice(0, 150)
 
-    // Enviar el audio directamente, sin botones.
-    await sock.sendMessage(
-      chat,
-      {
-        audio,
+    const caption =
+      `╭─「 🐸 *PEPE BOT* 」\n` +
+      `│ 🎵 *Título:* ${video.title}\n` +
+      `│ 👤 *Autor:* ${video.author?.name || 'Desconocido'}\n` +
+      `│ ⏱️ *Duración:* ${video.timestamp || 'Desconocida'}\n` +
+      `│ 👁️ *Vistas:* ${(video.views || 0).toLocaleString()}\n` +
+      `│ 🔗 *Enlace:* ${video.url}\n` +
+      `╰──────────────\n\n` +
+      `⏳ Preparando tu ${command === 'play' ? 'audio' : 'video'}...`
+
+    // Enviar ficha con miniatura.
+    if (video.thumbnail) {
+      await sock.sendMessage(chat, {
+        image: { url: video.thumbnail },
+        caption
+      }, { quoted: m })
+    } else {
+      await m.reply(caption)
+    }
+
+    // Elegir endpoint según el comando.
+    const isAudio = command === 'play'
+    const endpoint = isAudio
+      ? 'https://api.sylphy.xyz/download/ytmp3'
+      : 'https://api.sylphy.xyz/download/ytmp4'
+
+    const apiResponse = await axios.get(endpoint, {
+      params: {
+        url: video.url,
+        apikey: 'sylphy-e321'
+      },
+      timeout: 120000,
+      headers: { Accept: 'application/json' }
+    })
+
+    const api = apiResponse.data
+    const downloadUrl = api?.dl_url || api?.res?.url
+
+    if (!downloadUrl) {
+      throw new Error(
+        `La API no devolvió el enlace de ${isAudio ? 'audio' : 'video'}.`
+      )
+    }
+
+    // Consultar tamaño para videos.
+    let sendAsDocument = false
+
+    if (!isAudio) {
+      try {
+        const head = await axios.head(downloadUrl, {
+          timeout: 30000,
+          maxRedirects: 5
+        })
+
+        const bytes = Number(head.headers['content-length'] || 0)
+        sendAsDocument = bytes > LIMIT_MB * 1024 * 1024
+      } catch {
+        // Si no se puede determinar el tamaño, se envía normalmente.
+      }
+    }
+
+    // Enviar directamente a WhatsApp desde la URL.
+    if (isAudio) {
+      await sock.sendMessage(chat, {
+        audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
         fileName: `${title}.mp3`,
         ptt: false
-      },
-      { quoted: m }
-    )
+      }, { quoted: m })
+    } else {
+      await sock.sendMessage(chat, {
+        video: { url: downloadUrl },
+        mimetype: 'video/mp4',
+        fileName: `${title}.mp4`,
+        caption: sendAsDocument
+          ? '🎬 Video de PEPE BOT'
+          : ''
+      }, { quoted: m })
+    }
 
     await sock.sendMessage(chat, {
-      react: { text: '✅', key: m.key }
+      react: {
+        text: isAudio ? '✅' : '📽️',
+        key: m.key
+      }
     }).catch(() => {})
 
   } catch (error) {
-    console.error(
-      '[PLAY]',
-      error.response?.status || '',
-      error.message
-    )
+    console.error('[PEPE PLAY]', error.response?.status || '', error.message)
 
     await sock.sendMessage(chat, {
       react: { text: '❌', key: m.key }
     }).catch(() => {})
 
     await m.reply(
-      '❌ No pude enviar el audio. Puede que la API esté fallando o que el enlace no entregue un MP3 válido.'
+      '❌ No se pudo completar la descarga.\n' +
+      'La búsqueda o la API de descarga puede estar fallando.'
     ).catch(() => {})
   }
 }
 
-handler.command = ['play', 'musica', 'ytmp3', 'mp3']
-handler.help = ['play <nombre de canción>']
-handler.tags = ['descargas']
+function getVideoId(url) {
+  const match = String(url).match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})/
+  )
+  return match?.[1] || null
+}
+
+handler.command = ['play', 'play2', 'playvid']
+handler.help = [
+  'play <canción>',
+  'play2 <video>',
+  'playvid <video>'
+]
+handler.tags = ['descargas', 'youtube']
 handler.menu = true
 
 export default handler
