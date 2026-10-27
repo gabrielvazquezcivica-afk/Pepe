@@ -31,12 +31,11 @@ const nombresTags = {
     owner: '👑 OWNER 👑',
     stickers: '🎨 STICKERS 🎨',
     nsfw: '🔞 NSFW 🔞',
-    otros: '🐸 OTROS 🐸'
+    otros: '🐸 OTROS COMANDOS 🐸'
 }
 
 const emojis = ['💚', '🌟']
 
-// Unifica variantes para que no se repitan las categorías.
 function normalizarTag(tag = 'otros') {
     const limpio = String(tag)
         .trim()
@@ -46,24 +45,18 @@ function normalizarTag(tag = 'otros') {
 
     const alias = {
         info: 'informacion',
-        información: 'informacion',
-        informaciones: 'informacion',
         grupo: 'grupo',
         grupos: 'grupo',
         group: 'grupo',
         groups: 'grupo',
         diversion: 'diversion',
-        diversiones: 'diversion',
         descarga: 'descargas',
         download: 'descargas',
         downloader: 'descargas',
         herramienta: 'herramientas',
         tools: 'herramientas',
-        juegos: 'diversion',
-        game: 'diversion',
-        games: 'diversion',
         sticker: 'stickers',
-        owner: 'owner',
+        stickers: 'stickers',
         owners: 'owner'
     }
 
@@ -78,13 +71,12 @@ handler.run = async (sock, m) => {
         }
     }).catch(() => {})
 
-    // El index.js debe proporcionar el mapa de plugins.
     const commandMap = m.commandMap
 
     if (!commandMap || typeof commandMap.values !== 'function') {
         return m.reply(
-            '⚠️ No se pudo obtener la lista de comandos. ' +
-            'Hay que conectar el menú con el cargador de plugins del index.js.'
+            '❌ No se pudo obtener la lista de plugins.\n' +
+            'Agrega `m.commandMap = plugins` en executePlugin() de tu index.js.'
         )
     }
 
@@ -92,24 +84,22 @@ handler.run = async (sock, m) => {
     const nombreBot = config.BOT_NAME || 'PEPE BOT'
     const nombreOwner = config.OWNER_NAME || 'Owner'
 
-    // Agrupar comandos sin duplicar categorías.
     const categorias = new Map()
     const comandosVistos = new Set()
 
+    // Reunir comandos de todos los plugins.
     for (const entries of commandMap.values()) {
-        // El cargador puede guardar varios plugins por comando.
         const lista = Array.isArray(entries) ? entries : [entries]
 
         for (const entry of lista) {
             const plugin = entry?.handler || entry
-
             if (!plugin || plugin.menu === false) continue
 
-            const tagOriginal = Array.isArray(plugin.tags)
-                ? plugin.tags[0]
-                : plugin.tags
+            const tags = Array.isArray(plugin.tags)
+                ? plugin.tags
+                : [plugin.tags || 'otros']
 
-            const tag = normalizarTag(tagOriginal || 'otros')
+            const tag = normalizarTag(tags[0] || 'otros')
 
             if (!categorias.has(tag)) {
                 categorias.set(tag, {
@@ -128,33 +118,27 @@ handler.run = async (sock, m) => {
                 if (!nombre) continue
 
                 const clave = `${tag}:${nombre.toLowerCase()}`
-
                 if (comandosVistos.has(clave)) continue
-                comandosVistos.add(clave)
 
+                comandosVistos.add(clave)
                 categorias.get(tag).comandos.push(nombre)
             }
         }
     }
 
-    // Orden manual de categorías.
+    // Ordenar según ordenTags; las categorías desconocidas quedan al final.
     const ordenNormalizado = ordenTags.map(normalizarTag)
 
     const grupos = [...categorias.values()]
-        .filter(categoria => categoria.comandos.length > 0)
+        .filter(grupo => grupo.comandos.length > 0)
         .sort((a, b) => {
-            const indexA = ordenNormalizado.indexOf(a.tag)
-            const indexB = ordenNormalizado.indexOf(b.tag)
+            const ia = ordenNormalizado.indexOf(a.tag)
+            const ib = ordenNormalizado.indexOf(b.tag)
 
-            const posicionA = indexA === -1
-                ? Infinity
-                : indexA
+            const posA = ia === -1 ? Infinity : ia
+            const posB = ib === -1 ? Infinity : ib
 
-            const posicionB = indexB === -1
-                ? Infinity
-                : indexB
-
-            return posicionA - posicionB
+            return posA - posB
         })
 
     let total = 0
@@ -164,11 +148,12 @@ handler.run = async (sock, m) => {
         `┃\n` +
         `┃ 💚 Prefijo: ${prefijo}\n` +
         `┃ 👑 Owner: ${nombreOwner}\n` +
-        `┃ 📚 Comandos disponibles\n` +
+        `┃ 📚 Lista de comandos\n` +
         `┃\n`
 
     for (const grupo of grupos) {
-        const titulo = nombresTags[grupo.tag] ||
+        const titulo =
+            nombresTags[grupo.tag] ||
             `🐸 ${grupo.tag.toUpperCase()} 🐸`
 
         texto += `┣━━〔 ${titulo} 〕\n`
@@ -178,11 +163,11 @@ handler.run = async (sock, m) => {
             total++
         })
 
-        texto += `┃\n`
+        texto += '┃\n'
     }
 
     texto +=
-        `┣━━━━━━━━━━━━━━\n` +
+        `┣━━━━━━━━━━━━━━━━━━\n` +
         `┃ 📊 Total: ${total} comandos\n` +
         `╰━━〔 💚 ${nombreBot} 〕━━╯\n` +
         `> 🌟 Gracias por usarme.`
