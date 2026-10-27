@@ -45,7 +45,9 @@ delowner: '🗑️',
 join: '🚪',
 setpp: '🖼️',
 play: '🎵',
-salir: '👋🏻'
+salir: '👋🏻',
+reiniciar: '🔁',
+update: '⬆️'
 }
 
 function normalizarTag(tag = '') {
