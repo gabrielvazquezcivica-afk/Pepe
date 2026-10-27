@@ -205,7 +205,7 @@ handler.run = async (sock, m) => {
 }
 
 handler.command = ['menu', 'help', 'ayuda']
-handler.help = ['menu]
+handler.help = ['menu']
 handler.tags = ['informacion']
 handler.menu = true
 
