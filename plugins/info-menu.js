@@ -12,7 +12,7 @@ const ordenTags = [
     'descargas',
     'buscador',
     'herramientas',
-    'diversión',
+    'diversion',
     'rpg',
     'owner',
     'stickers',
@@ -20,22 +20,22 @@ const ordenTags = [
 ]
 
 const nombresTags = {
-    informacion: '𝙄𝙉𝙁𝙊𝙍𝙈𝘼𝘾𝙄𝙊𝙉',
-    'on-off': '𝙊𝙉 - 𝙊𝙁𝙁',
-    frases: '𝙁𝙍𝘼𝙎𝙀𝙎',
-    grupo: '𝙂𝙍𝙐𝙋𝙊',
-    descargas: '𝘿𝙀𝙎𝘾𝘼𝙍𝙂𝘼𝙎',
-    buscador: '𝘽𝙐𝙎𝘾𝘼𝘿𝙊𝙍',
-    herramientas: '𝙃𝙀𝙍𝙍𝘼𝙈𝙄𝙀𝙉𝙏𝘼𝙎',
-    diversion: '𝘿𝙄𝙑𝙀𝙍𝙎𝙄𝙊́𝙉',
-    rpg: '𝙍𝙋𝙂',
-    owner: '𝙊𝙒𝙉𝙀𝙍',
-    stickers: '𝙎𝙏𝙄𝘾𝙆𝙀𝙍𝙎',
-    nsfw: '𝙉𝙎𝙁𝙒',
-    otros: '𝙊𝙏𝙍𝙊𝙎'
+    informacion: '📌 INFORMACIÓN',
+    'on-off': '🔌 ON / OFF',
+    frases: '💬 FRASES',
+    grupo: '👥 GRUPO',
+    descargas: '📥 DESCARGAS',
+    buscador: '🔎 BUSCADOR',
+    herramientas: '🛠️ HERRAMIENTAS',
+    diversion: '🎮 DIVERSIÓN',
+    rpg: '⚔️ RPG',
+    owner: '👑 OWNER',
+    stickers: '🎨 STICKERS',
+    nsfw: '🔞 NSFW',
+    otros: '📂 OTROS'
 }
 
-const emojis = ['💚', '🌟']
+const emojis = ['💚', '✨', '🐸', '🌟']
 
 function normalizarTag(tag = 'otros') {
     const limpio = String(tag)
@@ -61,27 +61,20 @@ function normalizarTag(tag = 'otros') {
     return alias[limpio] || limpio
 }
 
-function negrita(texto) {
-    const normal = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    const bold = '𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵'
-
-    return [...String(texto)].map(letra => {
-        const index = normal.indexOf(letra)
-        return index === -1 ? letra : bold[index]
-    }).join('')
-}
-
 handler.run = async (sock, m) => {
     await sock.sendMessage(m.chat, {
-        react: { text: '📜', key: m.key }
+        react: {
+            text: '🐸',
+            key: m.key
+        }
     }).catch(() => {})
 
     const commandMap = m.commandMap
 
     if (!commandMap || typeof commandMap.values !== 'function') {
         return m.reply(
-            '❌ No se pudo obtener la lista de plugins.\n' +
-            'Agrega m.commandMap = plugins en executePlugin() de index.js.'
+            '❌ No se pudo cargar la lista de comandos.\n' +
+            'Comprueba que index.js incluya m.commandMap = plugins.'
         )
     }
 
@@ -97,6 +90,7 @@ handler.run = async (sock, m) => {
 
         for (const entry of lista) {
             const plugin = entry?.handler || entry
+
             if (!plugin || plugin.menu === false) continue
 
             const tags = Array.isArray(plugin.tags)
@@ -106,19 +100,23 @@ handler.run = async (sock, m) => {
             const tag = normalizarTag(tags[0] || 'otros')
 
             if (!categorias.has(tag)) {
-                categorias.set(tag, { tag, comandos: [] })
+                categorias.set(tag, {
+                    tag,
+                    comandos: []
+                })
             }
 
             const help = plugin.help ?? plugin.command ?? []
-            const comandos = Array.isArray(help) ? help : [help]
+            const listaComandos = Array.isArray(help) ? help : [help]
 
-            for (const comando of comandos) {
+            for (const comando of listaComandos) {
                 if (typeof comando !== 'string') continue
 
                 const nombre = comando.trim()
                 if (!nombre) continue
 
                 const clave = `${tag}:${nombre.toLowerCase()}`
+
                 if (comandosVistos.has(clave)) continue
 
                 comandosVistos.add(clave)
@@ -135,40 +133,43 @@ handler.run = async (sock, m) => {
             const ia = ordenNormalizado.indexOf(a.tag)
             const ib = ordenNormalizado.indexOf(b.tag)
 
-            return (ia === -1 ? Infinity : ia) -
-                   (ib === -1 ? Infinity : ib)
+            const ordenA = ia === -1 ? 999 : ia
+            const ordenB = ib === -1 ? 999 : ib
+
+            return ordenA - ordenB
         })
 
     let total = 0
 
     let texto =
-        `╭━━〔 🐸 ${negrita(nombreBot)} 〕━━╮\n` +
+        `╭━━━〔 🐸 ${nombreBot} 〕━━━╮\n` +
+        `┃ 💚 ¡Hola! Bienvenido al menú\n` +
         `┃\n` +
-        `┃ 💚 𝗣𝗿𝗲𝗳𝗶𝗷𝗼: ${prefijo}\n` +
-        `┃ 👑 𝗢𝘄𝗻𝗲𝗿: ${negrita(nombreOwner)}\n` +
-        `┃\n`
+        `┃ 👑 Owner: ${nombreOwner}\n` +
+        `┃ ⚙️ Prefijo: ${prefijo}\n` +
+        `┃ 📚 Comandos disponibles\n` +
+        `╰━━━━━━━━━━━━━━━━━━╯\n\n`
 
     for (const grupo of grupos) {
-        const titulo = nombresTags[grupo.tag] ||
-            `𝙊𝙏𝙍𝙊𝙎: ${grupo.tag.toUpperCase()}`
+        texto += `┏━━━〔 ${nombresTags[grupo.tag] || `📂 ${grupo.tag.toUpperCase()}`} 〕\n`
 
-        texto += `┣━━〔 ${titulo} 〕\n`
+        for (let i = 0; i < grupo.comandos.length; i++) {
+            const comando = grupo.comandos[i]
+            const emoji = emojis[i % emojis.length]
 
-        grupo.comandos.forEach((comando, index) => {
-            texto += `┃ ${emojis[index % emojis.length]} ${negrita(comando)}\n`
+            texto += `┃ ${emoji} ${prefijo}${comando}\n`
             total++
-        })
+        }
 
-        texto += '┃\n'
+        texto += `┗━━━━━━━━━━━━━━━━━━\n\n`
     }
 
     texto +=
-        `┣━━━━━━━━━━━━━━━━━━\n` +
-        `┃ 📊 𝗧𝗼𝘁𝗮𝗹: ${negrita(String(total))} 𝗰𝗼𝗺𝗮𝗻𝗱𝗼𝘀\n` +
-        `╰━━〔 💚 ${negrita(nombreBot)} 〕━━╯\n` +
-        `> 🌟 𝗚𝗿𝗮𝗰𝗶𝗮𝘀 𝗽𝗼𝗿 𝘂𝘀𝗮𝗿𝗺𝗲.`
+        `╭━━━〔 📊 ESTADÍSTICAS 〕\n` +
+        `┃ 🧩 Total: ${total} comandos\n` +
+        `┃ 💚 Gracias por usar ${nombreBot}\n` +
+        `╰━━━━━━━━━━━━━━━━━━╯`
 
-    // Imagen del menú dentro de assets
     const imagen = path.resolve(
         './assets/file_00000000963081fd88ccfde79ffff923.png'
     )
@@ -185,8 +186,7 @@ handler.run = async (sock, m) => {
         )
     }
 
-    // Si no encuentra la imagen, envía el menú como texto
-    console.error('No se encontró la imagen del menú:', imagen)
+    console.error('[PEPE MENU] No se encontró la imagen:', imagen)
 
     return sock.sendMessage(
         m.chat,
