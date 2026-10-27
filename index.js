@@ -54,6 +54,12 @@ async function loadPlugins() {
 
                 const handler = mod.default || mod.Handler || mod.handler
 
+if (file.name.toLowerCase() === 'play.js') {
+    console.log('[DEBUG PLAY] Archivo encontrado:', fullPath)
+    console.log('[DEBUG PLAY] Exportaciones:', Object.keys(mod))
+    console.log('[DEBUG PLAY] Handler:', mod.default)
+}
+
                 if (!handler) {
                     console.log(chalk.yellow(`⚠ Sin handler: ${file.name}`))
                     continue
