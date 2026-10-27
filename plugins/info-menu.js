@@ -60,18 +60,13 @@ return indice === -1 ? letra : letras[indice]
 handler.run = async (sock, m) => {
 try {
 await sock.sendMessage(m.chat, {
-react: {
-text: '🐸',
-key: m.key
-}
+react: { text: '🐸', key: m.key }
 }).catch(() => {})
 
 const commandMap = m.commandMap
 
 if (!commandMap || typeof commandMap.values !== 'function') {
-  return m.reply(
-    '⚠️ No se pudo cargar el menú dinámico. Revisa la configuración de index.js.'
-  )
+  return m.reply('⚠️ No se pudo cargar el menú dinámico. Revisa index.js.')
 }
 
 const categorias = new Map()
@@ -82,10 +77,7 @@ for (const entradas of commandMap.values()) {
 
     if (!plugin || plugin.menu === false) continue
 
-    const tags = Array.isArray(plugin.tags)
-      ? plugin.tags
-      : ['otros']
-
+    const tags = Array.isArray(plugin.tags) ? plugin.tags : ['otros']
     const comandos = Array.isArray(plugin.help)
       ? plugin.help
       : Array.isArray(plugin.command)
@@ -97,24 +89,19 @@ for (const entradas of commandMap.values()) {
     for (const tagOriginal of tags) {
       const tag = normalizarTag(tagOriginal)
 
-      if (!categorias.has(tag)) {
-        categorias.set(tag, new Set())
-      }
+      if (!categorias.has(tag)) categorias.set(tag, new Set())
 
       for (const comando of comandos) {
-        if (typeof comando !== 'string') continue
-
-        const limpio = comando.trim()
-        if (!limpio) continue
-
-        categorias.get(tag).add(limpio)
+        if (typeof comando === 'string' && comando.trim()) {
+          categorias.get(tag).add(comando.trim())
+        }
       }
     }
   }
 }
 
 if (!categorias.size) {
-  return m.reply('🐸 No encontré comandos para mostrar en el menú.')
+  return m.reply('🐸 No encontré comandos para mostrar.')
 }
 
 const prefijo = config.PREFIX || '.'
@@ -123,12 +110,17 @@ const nombreOwner = config.OWNER_NAME || 'Owner'
 
 let texto = ''
 
-texto += '─── ⋆⋅☆⋅⋆ ──\n'
+texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
+texto += '       ─── ⋆⋅☆⋅⋆ ──\n'
 texto += `       ୨୧ ${nombreBot} ୨୧\n`
-texto += '─── ⋆⋅☆⋅⋆ ──\n\n'
+texto += '       ── ⋆⋅☆⋅⋆ ───\n'
+texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
+
+texto += '╭───────「 🐸 」───────╮\n'
 texto += `╰┈➤ 💚 𝐏𝐫𝐞𝐟𝐢𝐣𝐨: ${prefijo}\n`
 texto += `╰┈➤ 💚 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
-texto += `╰┈➤ 💚 𝐂𝐨𝐦𝐚𝐧𝐝𝐨𝐬: ${[...categorias.values()].reduce((total, set) => total + set.size, 0)}\n\n`
+texto += `╰┈➤ 💚 𝐂𝐚𝐭𝐞𝐠𝐨𝐫𝐢́𝐚𝐬: ${categorias.size}\n`
+texto += '╰─────────────────────╯\n\n'
 
 const tagsOrdenados = [
   ...ordenTags.filter(tag => categorias.has(tag)),
@@ -137,25 +129,25 @@ const tagsOrdenados = [
 
 for (const tag of tagsOrdenados) {
   const comandos = [...categorias.get(tag)]
-
   if (!comandos.length) continue
 
   const titulo = nombresTags[tag] || letraElegante(tag.toUpperCase())
 
-  texto += '─── ⋆⋅☆⋅⋆ ──\n'
+  texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
   texto += `       ✧ ${titulo} ✧\n`
-  texto += '─── ⋆⋅☆⋅⋆ ──\n'
+  texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
 
   for (const comando of comandos) {
     texto += `╰┈➤ 🐸 ${letraElegante(prefijo + comando)}\n`
   }
 
-  texto += '\n'
+  texto += '╰────────── ⋆⋅☆⋅⋆ ──────\n\n'
 }
 
-texto += '─── ⋆⋅☆⋅⋆ ──\n'
+texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
 texto += '       ୨୧ 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓 ୨୧\n'
-texto += '╰┈➤ 𝐃𝐢𝐬𝐟𝐫𝐮𝐭𝐚 𝐥𝐨𝐬 𝐜𝐨𝐦𝐚𝐧𝐝𝐨𝐬 🐸\n'
+texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
+texto += '╰┈➤ 𝐆𝐫𝐚𝐜𝐢𝐚𝐬 𝐩𝐨𝐫 𝐮𝐬𝐚𝐫𝐦𝐞 🐸\n'
 texto += '─── ⋆⋅☆⋅⋆ ──'
 
 const imagen = path.resolve(
@@ -173,11 +165,7 @@ if (fs.existsSync(imagen)) {
   )
 }
 
-return await sock.sendMessage(
-  m.chat,
-  { text: texto },
-  { quoted: m }
-)
+return await sock.sendMessage(m.chat, { text: texto }, { quoted: m })
 
 } catch (error) {
 console.error('[MENU ERROR]', error)
@@ -186,7 +174,7 @@ return m.reply('❌ Ocurrió un error al generar el menú.')
 }
 
 handler.command = ['menu', 'help', 'ayuda']
-handler.help = ['menu', 'help', 'ayuda']
+handler.help = ['menu']
 handler.tags = ['informacion']
 handler.menu = true
 
