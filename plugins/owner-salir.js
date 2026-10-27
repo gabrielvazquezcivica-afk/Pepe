@@ -34,9 +34,9 @@ react: { text: '👋', key: m.key }
 await sock.sendMessage(chat, {
   text:
     `> 🐸 *${config.BOT_NAME || 'PEPE BOT'}*\n\n` +
-    '> ╭━━━━━━━━━━━━━━━━━━━━╮\n' +
-    '> │ 👋 ¡Hasta pronto!\n' +
-    '> ╰━━━━━━━━━━━━━━━━━━━━╯\n\n' +
+    ' ╭━━━━━━━━━━━━━━━━━━━━╮\n' +
+    ' │ 👋 ¡Hasta pronto!\n' +
+    ' ╰━━━━━━━━━━━━━━━━━━━━╯\n\n' +
     '> Gracias por permitirme formar parte de este grupo. 💚\n' +
     '> ¡Nos vemos en otra ocasión! 🌟'
 })
