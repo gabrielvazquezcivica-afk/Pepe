@@ -1,5 +1,6 @@
-
 import config from '../config.js'
+import fs from 'node:fs'
+import path from 'node:path'
 
 const handler = {}
 
@@ -45,12 +46,9 @@ function normalizarTag(tag = 'otros') {
 
     const alias = {
         info: 'informacion',
-        información: 'informacion',
-        grupo: 'grupo',
         grupos: 'grupo',
         group: 'grupo',
         groups: 'grupo',
-        diversion: 'diversion',
         descarga: 'descargas',
         download: 'descargas',
         downloader: 'descargas',
@@ -63,7 +61,6 @@ function normalizarTag(tag = 'otros') {
     return alias[limpio] || limpio
 }
 
-// Convierte letras normales a negrita Unicode.
 function negrita(texto) {
     const normal = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     const bold = '𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵'
@@ -170,6 +167,26 @@ handler.run = async (sock, m) => {
         `┃ 📊 𝗧𝗼𝘁𝗮𝗹: ${negrita(String(total))} 𝗰𝗼𝗺𝗮𝗻𝗱𝗼𝘀\n` +
         `╰━━〔 💚 ${negrita(nombreBot)} 〕━━╯\n` +
         `> 🌟 𝗚𝗿𝗮𝗰𝗶𝗮𝘀 𝗽𝗼𝗿 𝘂𝘀𝗮𝗿𝗺𝗲.`
+
+    // Imagen del menú dentro de assets
+    const imagen = path.resolve(
+        './assets/file_00000000963081fd88ccfde79ffff923.png'
+    )
+
+    if (fs.existsSync(imagen)) {
+        return sock.sendMessage(
+            m.chat,
+            {
+                image: fs.readFileSync(imagen),
+                caption: texto,
+                mentions: m.sender ? [m.sender] : []
+            },
+            { quoted: m }
+        )
+    }
+
+    // Si no encuentra la imagen, envía el menú como texto
+    console.error('No se encontró la imagen del menú:', imagen)
 
     return sock.sendMessage(
         m.chat,
