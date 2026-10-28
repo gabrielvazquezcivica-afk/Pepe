@@ -6,8 +6,8 @@ function limpiarNumero(jid = '') {
     return String(jid).replace(/\D/g, '')
 }
 
-function normalizarJid(jid = '') {
-    return String(jid).split(':')[0]
+function normalizar(jid = '') {
+    return String(jid || '').split(':')[0]
 }
 
 function esAdmin(participante) {
@@ -37,6 +37,8 @@ handler.run = async (sock, m, args = []) => {
         )
 
     const editar = async (mensaje, text) => {
+        if (!mensaje?.key) return
+
         try {
             await sock.sendMessage(from, {
                 text,
@@ -64,22 +66,17 @@ handler.run = async (sock, m, args = []) => {
 
     const participantes = metadata.participants || []
 
-    // Buscar por ID, JID o LID.
     const buscarParticipante = jid => {
         if (!jid) return undefined
 
         return participantes.find(p =>
-            p.id === jid ||
-            p.jid === jid ||
-            p.lid === jid ||
-            normalizarJid(p.id) === normalizarJid(jid) ||
-            (p.jid && normalizarJid(p.jid) === normalizarJid(jid)) ||
-            (p.lid && normalizarJid(p.lid) === normalizarJid(jid))
+            [p.id, p.jid, p.lid]
+                .filter(Boolean)
+                .includes(jid)
         )
     }
 
-    // Comprobación del administrador que ejecuta el comando.
-    // Se conserva el método del código que dijiste que sí funcionaba.
+    // Mantiene la comprobación del usuario del código que te funcionaba.
     const userInfo = participantes.find(
         p => p.id === sender || p.jid === sender
     )
@@ -89,27 +86,51 @@ handler.run = async (sock, m, args = []) => {
         return aviso('> 🚫 Solo los administradores pueden usar .kick.')
     }
 
-    // Reconocer al bot con su ID habitual de WhatsApp.
+    // Buscar el identificador real del bot.
     const rawBotId = sock.user?.id || ''
+    const rawBotLid = sock.user?.lid || ''
     const botNumero = rawBotId.split(':')[0].split('@')[0]
     const botJid = `${botNumero}@s.whatsapp.net`
 
-    let botInfo = participantes.find(
-        p => p.id === botJid || p.jid === botJid
+    const posiblesIds = [
+        rawBotId,
+        rawBotLid,
+        botJid
+    ].filter(Boolean)
+
+    let botInfo = participantes.find(p =>
+        [p.id, p.jid, p.lid]
+            .filter(Boolean)
+            .some(id => posiblesIds.includes(id))
     )
 
-    // Alternativa por LID o por la identidad devuelta por el socket.
+    // Alternativa: comparar la parte del identificador anterior a @.
     if (!botInfo) {
-        botInfo = buscarParticipante(rawBotId)
+        botInfo = participantes.find(p =>
+            [p.id, p.jid, p.lid]
+                .filter(Boolean)
+                .some(id => {
+                    const valor = String(id).split('@')[0].split(':')[0]
+                    return valor === botNumero
+                })
+        )
     }
 
     if (!esAdmin(botInfo)) {
-        console.log('DEBUG KICK botId:', botJid)
-        console.log('DEBUG KICK botInfo:', JSON.stringify(botInfo || null))
+        console.log('DEBUG KICK sock.user:', JSON.stringify(sock.user))
+        console.log(
+            'DEBUG KICK participantes:',
+            JSON.stringify(participantes.map(p => ({
+                id: p.id,
+                jid: p.jid,
+                lid: p.lid,
+                admin: p.admin
+            })))
+        )
 
         await reaccion('⚠️')
         return aviso(
-            '> ⚠️ No pude verificar los permisos de administrador de PEPE BOT. Revisa la consola para ver el identificador detectado.'
+            '> ⚠️ No pude confirmar que PEPE BOT sea administrador. Revisa el diagnóstico de la consola.'
         )
     }
 
@@ -129,11 +150,10 @@ handler.run = async (sock, m, args = []) => {
         objetivos.push(contextInfo.participant)
     }
 
-    // Aceptar números escritos si no hay menciones ni respuesta.
+    // También admite números escritos como argumentos.
     if (!objetivos.length) {
         for (const arg of args) {
             const numero = arg.replace(/\D/g, '')
-
             if (numero.length >= 7) {
                 objetivos.push(`${numero}@s.whatsapp.net`)
             }
@@ -149,7 +169,7 @@ handler.run = async (sock, m, args = []) => {
             '> 📝 *Ejemplos:*\n' +
             '> .kick @usuario\n' +
             '> .kick @usuario1 @usuario2\n' +
-            '> También puedes responder a un mensaje escribiendo .kick\n\n' +
+            '> También puedes responder a un mensaje con .kick\n\n' +
             '> ⏳ Este aviso se actualizará en 15 segundos.'
         )
 
@@ -158,7 +178,7 @@ handler.run = async (sock, m, args = []) => {
         await editar(
             mensaje,
             '> 🐸 *PEPE BOT — AYUDA KICK*\n\n' +
-            '> 📝 Usa .kick mencionando a los usuarios que quieres expulsar.\n' +
+            '> 📝 Usa .kick mencionando a los usuarios que deseas expulsar.\n' +
             '> También puedes responder al mensaje de una persona con .kick\n\n' +
             '> 🛡️ Solo administradores pueden usar este comando.'
         )
@@ -171,7 +191,7 @@ handler.run = async (sock, m, args = []) => {
         metadata.owner ||
         participantes.find(p => p.admin === 'superadmin')?.id
 
-    // Protección del propietario de PEPE BOT.
+    // Protección del propietario configurado de PEPE BOT.
     const owners = (config.owner || [])
         .filter(Boolean)
         .map(limpiarNumero)
@@ -213,16 +233,15 @@ handler.run = async (sock, m, args = []) => {
             participante.lid
         ].filter(Boolean)
 
-        const esDuenoGrupo = Boolean(ownerGrupo) && ids.some(
-            id => normalizarJid(id) === normalizarJid(ownerGrupo)
-        )
+        const esDuenoGrupo = Boolean(ownerGrupo) &&
+            ids.some(id => normalizar(id) === normalizar(ownerGrupo))
 
         if (esPropietarioBot(participante) || esDuenoGrupo) {
             protegidos.push(participante.id)
             continue
         }
 
-        // Se permite expulsar administradores normales.
+        // Permite expulsar administradores normales.
         try {
             await sock.groupParticipantsUpdate(
                 from,
@@ -248,7 +267,7 @@ handler.run = async (sock, m, args = []) => {
     let texto = '> 🐸 *PEPE BOT — EXPULSIONES*\n\n'
 
     texto += lista('> ✅ *Expulsados:*', expulsados)
-    texto += lista('> 👑 *Protegidos:*', protegidos)
+    texto += lista('> 👑 *Usuarios protegidos:*', protegidos)
     texto += lista('> ❌ *No se pudieron expulsar:*', fallidos)
     texto += `> 👮 *Acción realizada por:* @${limpiarNumero(sender)}\n`
     texto += `> 🐸 ${config.BOT_NAME || 'PEPE BOT'}`
