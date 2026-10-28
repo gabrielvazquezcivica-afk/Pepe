@@ -3,12 +3,16 @@ import config from './config.js'
 import { DisconnectReason } from '@whiskeysockets/baileys'
 import fs from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import chalk from 'chalk'
 import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
 
-const BASE_DIR = path.dirname(new URL(import.meta.url).pathname)
+// ══════════════════════════════════════
+// ⚙️ CONFIGURACIÓN
+// ══════════════════════════════════════
+
+const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PLUGINS_DIR = path.join(BASE_DIR, 'plugins')
 const logger = pino({ level: 'silent' })
 
@@ -34,7 +38,7 @@ async function loadPlugins() {
     async function scan(directory) {
         const files = fs.readdirSync(directory, {
             withFileTypes: true
-        })
+        }).sort((a, b) => a.name.localeCompare(b.name))
 
         for (const file of files) {
             const fullPath = path.join(directory, file.name)
@@ -46,8 +50,9 @@ async function loadPlugins() {
 
             if (
                 !file.isFile() ||
-                !/\.(js|mjs)$/.test(file.name) ||
-                file.name.endsWith('.disabled.js')
+                !/\.(js|mjs)$/i.test(file.name) ||
+                file.name.endsWith('.disabled.js') ||
+                file.name.endsWith('.disabled.mjs')
             ) {
                 continue
             }
@@ -107,9 +112,7 @@ async function loadPlugins() {
 
                 console.log(
                     chalk.green('✔ ') +
-                    chalk.white(
-                        path.relative(PLUGINS_DIR, fullPath)
-                    ) +
+                    chalk.white(path.relative(PLUGINS_DIR, fullPath)) +
                     chalk.gray(` (${count} comandos)`)
                 )
             } catch (error) {
@@ -123,10 +126,14 @@ async function loadPlugins() {
 
     await scan(PLUGINS_DIR)
 
-    // ══════════════════════════════════════
-    // 🔎 DIAGNÓSTICO DEL MENÚ
-    // ══════════════════════════════════════
+    mostrarDiagnostico()
+}
 
+// ══════════════════════════════════════
+// 🔎 DIAGNÓSTICO DE PLUGINS Y CATEGORÍAS
+// ══════════════════════════════════════
+
+function mostrarDiagnostico() {
     const categorias = new Set()
     const archivosMenu = new Set()
 
@@ -150,21 +157,13 @@ async function loadPlugins() {
 
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
     console.log(chalk.greenBright.bold('🐸 PEPE BOT | DIAGNÓSTICO'))
-    console.log(
-        chalk.cyan('📂 Directorio de plugins: ') +
-        chalk.white(PLUGINS_DIR)
-    )
-    console.log(
-        chalk.cyan('⚡ Comandos registrados: ') +
-        chalk.white(plugins.size)
-    )
-    console.log(
-        chalk.cyan('📦 Archivos de plugins en el menú: ') +
-        chalk.white(archivosMenu.size)
-    )
+    console.log(chalk.cyan('📂 Directorio del index: ') + BASE_DIR)
+    console.log(chalk.cyan('📂 Directorio de plugins: ') + PLUGINS_DIR)
+    console.log(chalk.cyan('⚡ Comandos registrados: ') + plugins.size)
+    console.log(chalk.cyan('📦 Archivos en el menú: ') + archivosMenu.size)
     console.log(
         chalk.cyan('📁 Categorías detectadas: ') +
-        chalk.white([...categorias].join(', ') || 'Ninguna')
+        ([...categorias].join(', ') || 'Ninguna')
     )
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
@@ -194,6 +193,7 @@ function getMessageText(message) {
     const msg = unwrapMessage(message.message)
 
     if (msg.conversation) return msg.conversation
+
     if (msg.extendedTextMessage?.text) {
         return msg.extendedTextMessage.text
     }
@@ -558,33 +558,37 @@ async function start() {
     await attachSocket(sock)
 
     console.log(chalk.green('✅ PEPE BOT está listo.'))
-}
 
-console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-console.log(chalk.greenBright('🐸 RESUMEN FINAL DE PEPE BOT'))
-console.log(chalk.cyan('📂 Plugins: ') + PLUGINS_DIR)
-console.log(chalk.cyan('⚡ Comandos registrados: ') + plugins.size)
+    // Resumen final para localizar diferencias entre Termux y servidor.
+    console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+    console.log(chalk.greenBright.bold('🐸 RESUMEN FINAL DE PEPE BOT'))
+    console.log(chalk.cyan('📂 Plugins: ') + PLUGINS_DIR)
+    console.log(chalk.cyan('⚡ Comandos registrados: ') + plugins.size)
 
-const categorias = new Set()
+    const categorias = new Set()
 
-for (const entradas of plugins.values()) {
-    for (const entrada of entradas) {
-        const handler = entrada.handler
-        if (handler.menu === false) continue
+    for (const entradas of plugins.values()) {
+        for (const entrada of entradas) {
+            const handler = entrada.handler
 
-        const tags = Array.isArray(handler.tags)
-            ? handler.tags
-            : ['otros']
+            if (handler.menu === false) continue
 
-        for (const tag of tags) {
-            categorias.add(String(tag))
+            const tags = Array.isArray(handler.tags)
+                ? handler.tags
+                : ['otros']
+
+            for (const tag of tags) {
+                categorias.add(String(tag))
+            }
         }
     }
-}
 
-console.log(chalk.cyan('📁 Categorías: ') + [...categorias].join(', '))
-console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n
-'))
+    console.log(
+        chalk.cyan('📁 Categorías: ') +
+        ([...categorias].join(', ') || 'Ninguna')
+    )
+    console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
+}
 
 start().catch(error => {
     console.error(chalk.red('❌ Error iniciando el bot:'), error)
