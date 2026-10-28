@@ -1,13 +1,23 @@
-const handler = async (sock, m) => {
+const handler = {}
+
+handler.run = async (sock, m, args = []) => {
     const inicio = Date.now()
     const chat = m.chat || m.key?.remoteJid
 
-    // Envía un único mensaje inicial
-    const enviado = await sock.sendMessage(chat, {
+    // Adaptarse al socket que entrega el index
+    const conn = sock?.sendMessage
+        ? sock
+        : sock?.conn
+
+    if (!conn?.sendMessage) {
+        throw new Error('No se encontró sendMessage en el socket recibido.')
+    }
+
+    // Enviar un solo mensaje inicial
+    const enviado = await conn.sendMessage(chat, {
         text: '🐸 *PEPE BOT*\n\n⚡ Midiendo velocidad...'
     }, { quoted: m })
 
-    // Mide el tiempo de respuesta
     const velocidad = Date.now() - inicio
 
     const estado = velocidad < 300
@@ -16,13 +26,14 @@ const handler = async (sock, m) => {
             ? 'Bueno'
             : 'Lento'
 
-    const texto = `🐸 *PEPE BOT — VELOCIDAD*\n\n` +
+    const texto =
+        `🐸 *PEPE BOT — VELOCIDAD*\n\n` +
         `⚡ *Latencia:* ${velocidad} ms\n` +
         `🚀 *Estado:* ${estado}\n` +
         `🤖 *Sistema:* En línea`
 
-    // Edita el mensaje anterior en vez de enviar otro
-    await sock.sendMessage(chat, {
+    // Editar el mensaje enviado
+    await conn.sendMessage(chat, {
         text: texto,
         edit: enviado.key
     })
