@@ -560,6 +560,32 @@ async function start() {
     console.log(chalk.green('✅ PEPE BOT está listo.'))
 }
 
+console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+console.log(chalk.greenBright('🐸 RESUMEN FINAL DE PEPE BOT'))
+console.log(chalk.cyan('📂 Plugins: ') + PLUGINS_DIR)
+console.log(chalk.cyan('⚡ Comandos registrados: ') + plugins.size)
+
+const categorias = new Set()
+
+for (const entradas of plugins.values()) {
+    for (const entrada of entradas) {
+        const handler = entrada.handler
+        if (handler.menu === false) continue
+
+        const tags = Array.isArray(handler.tags)
+            ? handler.tags
+            : ['otros']
+
+        for (const tag of tags) {
+            categorias.add(String(tag))
+        }
+    }
+}
+
+console.log(chalk.cyan('📁 Categorías: ') + [...categorias].join(', '))
+console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n
+'))
+
 start().catch(error => {
     console.error(chalk.red('❌ Error iniciando el bot:'), error)
     process.exitCode = 1
