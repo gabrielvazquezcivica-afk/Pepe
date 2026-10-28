@@ -8,7 +8,8 @@ import chalk from 'chalk'
 import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
 
-const PLUGINS_DIR = path.resolve('./plugins')
+const BASE_DIR = path.dirname(new URL(import.meta.url).pathname)
+const PLUGINS_DIR = path.join(BASE_DIR, 'plugins')
 const logger = pino({ level: 'silent' })
 
 const plugins = new Map()
@@ -31,7 +32,9 @@ async function loadPlugins() {
     }
 
     async function scan(directory) {
-        const files = fs.readdirSync(directory, { withFileTypes: true })
+        const files = fs.readdirSync(directory, {
+            withFileTypes: true
+        })
 
         for (const file of files) {
             const fullPath = path.join(directory, file.name)
@@ -45,23 +48,24 @@ async function loadPlugins() {
                 !file.isFile() ||
                 !/\.(js|mjs)$/.test(file.name) ||
                 file.name.endsWith('.disabled.js')
-            ) continue
+            ) {
+                continue
+            }
 
             try {
                 const mod = await import(
                     `${pathToFileURL(fullPath).href}?update=${Date.now()}`
                 )
 
-                const handler = mod.default || mod.Handler || mod.handler
-
-if (file.name.toLowerCase() === 'play.js') {
-    console.log('[DEBUG PLAY] Archivo encontrado:', fullPath)
-    console.log('[DEBUG PLAY] Exportaciones:', Object.keys(mod))
-    console.log('[DEBUG PLAY] Handler:', mod.default)
-}
+                const handler =
+                    mod.default ||
+                    mod.Handler ||
+                    mod.handler
 
                 if (!handler) {
-                    console.log(chalk.yellow(`⚠ Sin handler: ${file.name}`))
+                    console.log(
+                        chalk.yellow(`⚠ Sin handler: ${file.name}`)
+                    )
                     continue
                 }
 
@@ -81,7 +85,11 @@ if (file.name.toLowerCase() === 'play.js') {
                 for (const command of commandList) {
                     if (typeof command !== 'string') continue
 
-                    const name = command.toLowerCase().trim()
+                    const name = command
+                        .trim()
+                        .toLowerCase()
+                        .split(/\s+/)[0]
+
                     if (!name) continue
 
                     if (!plugins.has(name)) {
@@ -99,13 +107,15 @@ if (file.name.toLowerCase() === 'play.js') {
 
                 console.log(
                     chalk.green('✔ ') +
-                    chalk.white(path.relative(PLUGINS_DIR, fullPath)) +
+                    chalk.white(
+                        path.relative(PLUGINS_DIR, fullPath)
+                    ) +
                     chalk.gray(` (${count} comandos)`)
                 )
             } catch (error) {
                 console.error(
                     chalk.red(`❌ Plugin ${file.name}:`),
-                    error.message
+                    error.stack || error.message
                 )
             }
         }
@@ -113,8 +123,49 @@ if (file.name.toLowerCase() === 'play.js') {
 
     await scan(PLUGINS_DIR)
 
+    // ══════════════════════════════════════
+    // 🔎 DIAGNÓSTICO DEL MENÚ
+    // ══════════════════════════════════════
+
+    const categorias = new Set()
+    const archivosMenu = new Set()
+
+    for (const entradas of plugins.values()) {
+        for (const entrada of entradas) {
+            const handler = entrada.handler
+
+            if (handler.menu === false) continue
+
+            archivosMenu.add(entrada.file)
+
+            const tags = Array.isArray(handler.tags)
+                ? handler.tags
+                : ['otros']
+
+            for (const tag of tags) {
+                categorias.add(String(tag))
+            }
+        }
+    }
+
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-    console.log(chalk.cyan(`🧩 Comandos registrados: ${plugins.size}`))
+    console.log(chalk.greenBright.bold('🐸 PEPE BOT | DIAGNÓSTICO'))
+    console.log(
+        chalk.cyan('📂 Directorio de plugins: ') +
+        chalk.white(PLUGINS_DIR)
+    )
+    console.log(
+        chalk.cyan('⚡ Comandos registrados: ') +
+        chalk.white(plugins.size)
+    )
+    console.log(
+        chalk.cyan('📦 Archivos de plugins en el menú: ') +
+        chalk.white(archivosMenu.size)
+    )
+    console.log(
+        chalk.cyan('📁 Categorías detectadas: ') +
+        chalk.white([...categorias].join(', ') || 'Ninguna')
+    )
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
@@ -143,11 +194,15 @@ function getMessageText(message) {
     const msg = unwrapMessage(message.message)
 
     if (msg.conversation) return msg.conversation
-    if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text
+    if (msg.extendedTextMessage?.text) {
+        return msg.extendedTextMessage.text
+    }
 
     if (msg.imageMessage?.caption) return msg.imageMessage.caption
     if (msg.videoMessage?.caption) return msg.videoMessage.caption
-    if (msg.documentMessage?.caption) return msg.documentMessage.caption
+    if (msg.documentMessage?.caption) {
+        return msg.documentMessage.caption
+    }
 
     if (msg.buttonsResponseMessage?.selectedButtonId) {
         return msg.buttonsResponseMessage.selectedButtonId
@@ -161,7 +216,8 @@ function getMessageText(message) {
         return msg.listResponseMessage.singleSelectReply.selectedRowId
     }
 
-    const native = msg.interactiveResponseMessage?.nativeFlowResponseMessage
+    const native =
+        msg.interactiveResponseMessage?.nativeFlowResponseMessage
 
     if (native?.paramsJson) {
         try {
@@ -198,17 +254,26 @@ function isOwnerMessage(sender) {
     const senderId = normalizeId(sender)
     const senderDigits = senderId.replace(/\D/g, '')
 
-    const owners = Array.isArray(config.owner) ? config.owner : []
-    const ownerLids = Array.isArray(config.ownerLid) ? config.ownerLid : []
+    const owners = Array.isArray(config.owner)
+        ? config.owner
+        : []
+
+    const ownerLids = Array.isArray(config.ownerLid)
+        ? config.ownerLid
+        : []
 
     const matchesNumber = owners.some(number => {
         const normalized = String(number || '').replace(/\D/g, '')
-        return normalized.length > 0 && normalized === senderDigits
+
+        return normalized.length > 0 &&
+            normalized === senderDigits
     })
 
     const matchesLid = ownerLids.some(lid => {
         const normalized = normalizeId(lid)
-        return normalized.length > 0 && normalized === senderId
+
+        return normalized.length > 0 &&
+            normalized === senderId
     })
 
     return matchesNumber || matchesLid
@@ -315,9 +380,9 @@ async function executePlugin(plugin, m, parsed, sock) {
     const { handler, module } = plugin
 
     m.command = parsed.command
-m.args = parsed.args
-m.textCommand = parsed.text
-m.commandMap = plugins
+    m.args = parsed.args
+    m.textCommand = parsed.text
+    m.commandMap = plugins
 
     const context = {
         conn: sock,
@@ -436,7 +501,9 @@ async function attachSocket(sock) {
         const reason = lastDisconnect?.error?.output?.statusCode
 
         console.log(
-            chalk.yellow(`⚠️ Conexión cerrada. Código: ${reason ?? 'desconocido'}`)
+            chalk.yellow(
+                `⚠️ Conexión cerrada. Código: ${reason ?? 'desconocido'}`
+            )
         )
 
         if (
@@ -474,13 +541,16 @@ async function attachSocket(sock) {
 }
 
 // ══════════════════════════════════════
-// 🚀 INICIAR BOT SIN BANNER
+// 🚀 INICIAR BOT
 // ══════════════════════════════════════
 
 async function start() {
     if (typeof config.PREFIX !== 'string' || !config.PREFIX) {
         throw new Error('Define PREFIX como texto en config.js')
     }
+
+    console.log(chalk.cyan('📂 Directorio actual:'), process.cwd())
+    console.log(chalk.cyan('📂 Directorio del index:'), BASE_DIR)
 
     await loadPlugins()
 
