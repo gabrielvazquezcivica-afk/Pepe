@@ -59,7 +59,7 @@ handler.run = async (sock, m, args) => {
 
 handler.command = ['brat']
 handler.help = ['brat <texto>']
-handler.tags = ['herramientas']
+handler.tags = ['stickers']
 handler.menu = true
 
 export default handler
