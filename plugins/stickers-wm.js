@@ -76,7 +76,7 @@ handler.run = async (sock, m, args) => {
         const exifData = {
             'sticker-pack-id': `pepe-${id}`,
             'sticker-pack-name': texto,
-            'sticker-pack-publisher': 'PEPE BOT',
+            'sticker-pack-publisher': m.pushName || 'WhatsApp',
             emojis: [reaccionTipo]
         }
 
