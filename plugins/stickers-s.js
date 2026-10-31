@@ -1,26 +1,90 @@
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { toSticker } from '../lib/sticker.js'
 
 const handler = {}
 
+function unwrapMessage(message) {
+    let msg = message
+
+    while (msg) {
+        if (msg.ephemeralMessage) {
+            msg = msg.ephemeralMessage.message
+        } else if (msg.viewOnceMessage) {
+            msg = msg.viewOnceMessage.message
+        } else if (msg.viewOnceMessageV2) {
+            msg = msg.viewOnceMessageV2.message
+        } else if (msg.documentWithCaptionMessage) {
+            msg = msg.documentWithCaptionMessage.message
+        } else {
+            break
+        }
+    }
+
+    return msg
+}
+
+function getMediaMessage(m) {
+    const current = unwrapMessage(m.message || {})
+    const quoted = unwrapMessage(
+        m.msg?.contextInfo?.quotedMessage ||
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
+        {}
+    )
+
+    const currentType = Object.keys(current).find(key =>
+        ['imageMessage', 'videoMessage'].includes(key)
+    )
+
+    if (currentType) {
+        return {
+            message: m,
+            type: currentType
+        }
+    }
+
+    if (Object.keys(quoted).length) {
+        const quotedType = Object.keys(quoted).find(key =>
+            ['imageMessage', 'videoMessage'].includes(key)
+        )
+
+        if (quotedType) {
+            return {
+                message: {
+                    key: {
+                        remoteJid: m.chat,
+                        id: m.msg?.contextInfo?.stanzaId ||
+                            m.message?.extendedTextMessage?.contextInfo?.stanzaId,
+                        participant: m.msg?.contextInfo?.participant ||
+                            m.message?.extendedTextMessage?.contextInfo?.participant
+                    },
+                    message: quoted
+                },
+                type: quotedType
+            }
+        }
+    }
+
+    return null
+}
+
 handler.run = async (sock, m) => {
     try {
-        const quoted = m.quoted || m
-        const mime = quoted.mimetype || quoted.msg?.mimetype || ''
+        const media = getMediaMessage(m)
 
-        const isImage = mime.startsWith('image/')
-        const isVideo = mime.startsWith('video/')
-
-        if (!isImage && !isVideo) {
+        if (!media) {
             return m.reply(
-                '> 🐸 Responde a una imagen o video con el comando *.s* para convertirlo en sticker.'
+                '🐸 Envía una imagen o video junto con *.s*, o responde a uno con *.s*.'
             )
         }
 
+        const isVideo = media.type === 'videoMessage'
+
         if (isVideo) {
-            const seconds = quoted.seconds || quoted.msg?.seconds || 0
+            const videoMessage = media.message.message?.videoMessage
+            const seconds = videoMessage?.seconds || 0
 
             if (seconds > 10) {
-                return m.reply('> ❌ El video no puede durar más de 10 segundos.')
+                return m.reply('❌ El video no puede durar más de 10 segundos.')
             }
         }
 
@@ -31,11 +95,15 @@ handler.run = async (sock, m) => {
             }
         })
 
-        const buffer = await quoted.download()
-
-        if (!buffer) {
-            throw new Error('No se pudo descargar el archivo.')
-        }
+        const buffer = await downloadMediaMessage(
+            media.message,
+            'buffer',
+            {},
+            {
+                logger: console,
+                reuploadRequest: sock.updateMediaMessage
+            }
+        )
 
         const webp = await toSticker(buffer, isVideo)
 
@@ -51,10 +119,10 @@ handler.run = async (sock, m) => {
                 key: m.key
             }
         })
-    } catch (error) {
-        console.error('Error en comando .s:', error)
 
-        await m.reply('> ❌ Ocurrió un error al crear el sticker.')
+    } catch (error) {
+        console.error('Error en .s:', error)
+        await m.reply('❌ No se pudo convertir el archivo en sticker.')
     }
 }
 
