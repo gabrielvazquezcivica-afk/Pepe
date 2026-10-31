@@ -1,3 +1,4 @@
+
 import { connect } from './lib/connection.js'
 import config from './config.js'
 import { DisconnectReason } from '@whiskeysockets/baileys'
@@ -23,6 +24,126 @@ let activeSock = null
 let reconnecting = false
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// ══════════════════════════════════════
+// 💤 SISTEMA AFK
+// ══════════════════════════════════════
+
+const afkPath = path.join(BASE_DIR, 'database', 'afk.json')
+
+function leerAFK() {
+    try {
+        if (!fs.existsSync(afkPath)) return {}
+
+        const contenido = fs.readFileSync(afkPath, 'utf8')
+        return contenido.trim() ? JSON.parse(contenido) : {}
+    } catch (error) {
+        console.error(chalk.red('❌ Error leyendo afk.json:'), error.message)
+        return {}
+    }
+}
+
+function limpiarJid(jid = '') {
+    return String(jid).replace(/:\d+@/, '@').trim()
+}
+
+function numeroDeJid(jid = '') {
+    return limpiarJid(jid)
+        .replace(/@.+$/, '')
+        .replace(/\D/g, '')
+}
+
+function obtenerMenciones(message) {
+    const msg = unwrapMessage(message)
+    const tipos = [
+        msg.extendedTextMessage,
+        msg.imageMessage,
+        msg.videoMessage,
+        msg.documentMessage,
+        msg.audioMessage,
+        msg.stickerMessage
+    ].filter(Boolean)
+
+    const mencionados = []
+
+    for (const tipo of tipos) {
+        const lista = tipo.contextInfo?.mentionedJid || []
+        mencionados.push(...lista)
+    }
+
+    return [...new Set(mencionados.map(limpiarJid).filter(Boolean))]
+}
+
+async function detectarMencionesAFK(sock, message) {
+    const from = message.key.remoteJid
+
+    if (!from?.endsWith('@g.us')) return
+    if (message.key.fromMe) return
+
+    const mencionados = obtenerMenciones(message.message)
+    if (!mencionados.length) return
+
+    const db = leerAFK()
+    const grupoAFK = db[from] || {}
+
+    if (!Object.keys(grupoAFK).length) return
+
+    const avisos = []
+    const vistos = new Set()
+
+    for (const mencionado of mencionados) {
+        const jid = limpiarJid(mencionado)
+        const numero = numeroDeJid(jid)
+
+        let registro = grupoAFK[jid]
+
+        // Compatibilidad entre JID normal y LID.
+        if (!registro && numero) {
+            registro = Object.values(grupoAFK).find(usuario =>
+                usuario?.numero &&
+                String(usuario.numero).replace(/\D/g, '') === numero
+            )
+        }
+
+        if (!registro) continue
+
+        const clave = registro.numero || jid
+
+        if (vistos.has(clave)) continue
+        vistos.add(clave)
+
+        avisos.push({
+            numero: registro.numero || numero || 'Desconocido',
+            razon: registro.razon || 'Sin razón especificada'
+        })
+    }
+
+    if (!avisos.length) return
+
+    let nombreGrupo = 'Grupo'
+
+    try {
+        const metadata = await sock.groupMetadata(from)
+        nombreGrupo = metadata.subject || 'Grupo'
+    } catch {}
+
+    const texto = avisos.map(usuario =>
+`╭─── ⋆⋅☆⋅⋆ ───╮
+       💤 𝐔𝐒𝐔𝐀𝐑𝐈𝐎 𝐀𝐅𝐊
+╰─── ⋆⋅☆⋅⋆ ───╯
+
+> 🐸 @${usuario.numero}
+> 💬 Se encuentra ausente.
+> 📝 Razón: ${usuario.razon}`
+    ).join('\n\n')
+
+    await sock.sendMessage(from, {
+        text: `${texto}
+
+─── ⋆⋅☆⋅⋆ ──
+> 🌿 ${nombreGrupo}`
+    }, { quoted: message })
+}
 
 // ══════════════════════════════════════
 // 📂 CARGAR PLUGINS
@@ -421,6 +542,16 @@ async function processMessage(message, sock) {
 
     const chat = message.key.remoteJid
     if (chat === 'status@broadcast') return
+
+    // Detectar menciones AFK antes de comprobar el prefijo.
+    try {
+        await detectarMencionesAFK(sock, message)
+    } catch (error) {
+        console.error(
+            chalk.red('❌ Error detectando menciones AFK:'),
+            error
+        )
+    }
 
     const m = normalizeMessage(message, sock)
 
