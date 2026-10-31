@@ -9,6 +9,7 @@ const ordenTags = [
   'on-off',
   'frases',
   'grupo',
+  'free fire',
   'descargas',
   'buscador',
   'herramientas',
@@ -32,7 +33,7 @@ const categoriasInfo = {
   owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '👑' },
   stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
   nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' },
-  otros: { nombre: '𝐎𝐓𝐑𝐎𝐒', emoji: '✨' }
+  free fire: { nombre: '𝐅𝐑𝐄𝐄 𝐅𝐈𝐑𝐄', emoji: '🥷🏻' }
 }
 
 function normalizarTag(tag = '') {
