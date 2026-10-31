@@ -133,28 +133,23 @@ handler.run = async (sock, m, args = []) => {
         ...new Set(objetivos.filter(Boolean))
     ]
 
-    // Aviso de uso cuando no hay objetivos.
+    // Aviso inicial y edición después de 5 segundos.
     if (!unicos.length) {
         await reaccion('❌')
 
         const mensaje = await aviso(
             '> 🐸 *PEPE BOT — KICK*\n\n' +
-            '> ⚠️ Menciona a uno o varios usuarios, o responde a su mensaje.\n\n' +
-            '> 📝 *Ejemplos:*\n' +
-            '> .kick @usuario\n' +
-            '> .kick @usuario1 @usuario2\n' +
-            '> Responde a un mensaje escribiendo .kick\n\n' +
-            '> ⏳ Este aviso se actualizará en 15 segundos.'
+            '> ⚠️ Menciona a uno o varios usuarios, o responde a su mensaje.'
         )
 
-        await new Promise(resolve => setTimeout(resolve, 15000))
+        await new Promise(resolve => setTimeout(resolve, 5000))
 
         try {
             await sock.sendMessage(chat, {
                 text:
                     '> 🐸 *PEPE BOT — AYUDA KICK*\n\n' +
                     '> Usa .kick mencionando a los usuarios que quieres expulsar.\n' +
-                    '> También puedes responder a un mensaje con .kick',
+                    '> También puedes responder a un mensaje escribiendo .kick.',
                 edit: mensaje.key
             })
         } catch (error) {
