@@ -42,6 +42,55 @@ function guardarAFK(db) {
     fs.writeFileSync(afkPath, JSON.stringify(db, null, 2))
 }
 
+// Sistema MUTE
+const mutePath = path.join(BASE_DIR, 'database', 'muteados.json')
+
+function leerMuteados() {
+    try {
+        if (!fs.existsSync(mutePath)) return {}
+
+        const contenido = fs.readFileSync(mutePath, 'utf8')
+        return contenido.trim() ? JSON.parse(contenido) : {}
+    } catch (error) {
+        console.error(chalk.red('❌ Error leyendo muteados.json:'), error.message)
+        return {}
+    }
+}
+
+async function revisarMuteado(sock, message) {
+    const chat = message.key.remoteJid
+
+    if (!chat?.endsWith('@g.us')) return false
+    if (message.key.fromMe) return false
+
+    const identificadores = [
+        message.key.participant,
+        message.key.participantAlt,
+        message.participant,
+        message.sender,
+        message.senderLid
+    ].filter(Boolean).map(limpiarJid)
+
+    if (!identificadores.length) return false
+
+    const db = leerMuteados()
+    const muteados = (db[chat] || []).map(limpiarJid)
+
+    if (!identificadores.some(id => muteados.includes(id))) {
+        return false
+    }
+
+    try {
+        await sock.sendMessage(chat, {
+            delete: message.key
+        })
+    } catch (error) {
+        console.error(chalk.red('❌ No se pudo borrar mensaje de usuario muteado:'), error.message)
+    }
+
+    return true
+}
+
 function limpiarJid(jid = '') {
     return String(jid).replace(/:\d+@/, '@').trim()
 }
