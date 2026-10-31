@@ -1,7 +1,7 @@
-import axios from 'axios'
-import { sendButtons } from 'baileys-buttons'
 
-const API_URL = 'https://api-faa.my.id/faa/tts-legkap?text='
+import axios from 'axios'
+
+const API_URL = 'https://api-faa.my.id/faa/tts-legkap'
 
 const voces = [
     { id: 'nahida', nombre: 'Nahida' },
@@ -19,33 +19,40 @@ const textosPendientes = new Map()
 
 const handler = {}
 
-// Crear la clave para guardar el texto por chat y usuario
 function crearClave(m) {
-    return `${m.key.remoteJid}:${m.key.participant || m.key.remoteJid}`
+    const chat = m.key.remoteJid
+    const usuario = m.key.participant || m.key.remoteJid
+    return `${chat}:${usuario}`
 }
 
-// Mostrar todas las voces en un solo menú
+// Mostrar las nueve voces en una lista interactiva
 async function mostrarVoces(sock, m, texto) {
     const chat = m.key.remoteJid
     const clave = crearClave(m)
 
     textosPendientes.set(clave, texto)
 
-    const buttons = voces.map(voz => ({
-        id: `.ttsvoice ${voz.id}`,
-        displayText: `🎙️ ${voz.nombre}`
+    const rows = voces.map(voz => ({
+        title: `🎙️ ${voz.nombre}`,
+        description: `Generar audio con ${voz.nombre}`,
+        rowId: `.ttsvoice ${voz.id}`
     }))
 
-    await sendButtons(sock, chat, {
-        title: '🐸 PEPE BOT',
-        text: `🗣️ *Texto:*\n${texto}\n\n🎧 Selecciona una voz:`,
-        footer: 'PEPE BOT • TTS',
-        buttons,
-        quoted: m
-    })
+    await sock.sendMessage(chat, {
+        text: `🐸 *PEPE BOT — TTS*\n\n📝 *Texto:*\n${texto}\n\n🎧 Selecciona una de las nueve voces:`,
+        footer: 'PEPE BOT • Conversión de texto a voz',
+        title: 'Selecciona una voz',
+        buttonText: '🎙️ VER TODAS LAS VOCES',
+        sections: [
+            {
+                title: 'Voces disponibles',
+                rows
+            }
+        ]
+    }, { quoted: m })
 }
 
-// Comando .tts
+// Comando principal
 handler.run = async (sock, m, args = []) => {
     const texto = args.join(' ').trim()
 
@@ -58,7 +65,7 @@ handler.run = async (sock, m, args = []) => {
     }
 
     if (texto.length > 500) {
-        return m.reply('⚠️ El texto es demasiado largo. Intenta con uno más corto.')
+        return m.reply('⚠️ El texto es demasiado largo. Máximo 500 caracteres.')
     }
 
     try {
@@ -70,11 +77,12 @@ handler.run = async (sock, m, args = []) => {
 
     } catch (error) {
         console.error('[TTS MENU]', error)
+
         await m.reply('❌ No se pudo mostrar el menú de voces.')
     }
 }
 
-// Seleccionar una voz y generar el audio
+// Procesar la selección de voz
 handler.voice = async (sock, m, args = []) => {
     const chat = m.key.remoteJid
     const clave = crearClave(m)
@@ -83,13 +91,16 @@ handler.voice = async (sock, m, args = []) => {
     const voz = voces.find(v => v.id === modelo)
 
     if (!voz) {
-        return m.reply('❌ Esa voz no existe.')
+        return m.reply('❌ La voz seleccionada no existe.')
     }
 
     const texto = textosPendientes.get(clave)
 
     if (!texto) {
-        return m.reply('⚠️ No encontré un texto pendiente. Usa .tts nuevamente.')
+        return m.reply(
+            '⚠️ No hay ningún texto pendiente.\n' +
+            'Utiliza `.tts` para comenzar nuevamente.'
+        )
     }
 
     try {
@@ -97,7 +108,8 @@ handler.voice = async (sock, m, args = []) => {
             react: { text: '⏳', key: m.key }
         }).catch(() => {})
 
-        const { data } = await axios.get(API_URL + encodeURIComponent(texto), {
+        const { data } = await axios.get(API_URL, {
+            params: { text: texto },
             timeout: 60000
         })
 
@@ -111,8 +123,8 @@ handler.voice = async (sock, m, args = []) => {
 
         if (!resultado?.url) {
             return m.reply(
-                `❌ No se pudo generar el audio con la voz *${voz.nombre}*.\n` +
-                'Prueba seleccionando otra voz.'
+                `❌ No se pudo generar el audio con *${voz.nombre}*.\n` +
+                'Intenta seleccionar otra voz.'
             )
         }
 
