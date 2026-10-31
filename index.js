@@ -712,6 +712,53 @@ if (await revisarMuteado(sock, message)) return
     const matches = plugins.get(parsed.command)
     if (!matches?.length) return
 
+
+const modoAdminPath = path.join(BASE_DIR, 'database', 'modoadmin.json')
+
+function leerModoAdmin() {
+    try {
+        if (!fs.existsSync(modoAdminPath)) return {}
+
+        const contenido = fs.readFileSync(modoAdminPath, 'utf8')
+        return contenido.trim() ? JSON.parse(contenido) : {}
+    } catch {
+        return {}
+    }
+}
+
+async function usuarioEsAdmin(sock, message) {
+    try {
+        const chat = message.key.remoteJid
+        const metadata = await sock.groupMetadata(chat)
+        const participantes = metadata.participants || []
+
+        const ids = [
+            message.key?.participant,
+            message.key?.participantAlt,
+            message.participant,
+            message.sender,
+            message.senderLid
+        ].filter(Boolean).map(limpiarJid)
+
+        const participante = participantes.find(p =>
+            obtenerIdsParticipante(p).some(id => ids.includes(id))
+        )
+
+        return ['admin', 'superadmin'].includes(participante?.admin)
+    } catch {
+        return false
+    }
+}
+
+function esComandoFreeFire(handler) {
+    const tags = (handler.tags || []).map(tag =>
+        String(tag).toLowerCase().replace(/[\s_-]/g, '')
+    )
+
+    return tags.includes('freefire') || tags.includes('ff')
+}
+
+
     const isBanCommand = ['ban', 'unban'].includes(parsed.command)
 
     if (!m.isOwner && !isBanCommand && isBanned(m.sender)) {
