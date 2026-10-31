@@ -9,10 +9,7 @@ import chalk from 'chalk'
 import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
 
-// ══════════════════════════════════════
-// ⚙️ CONFIGURACIÓN
-// ══════════════════════════════════════
-
+// Configuración
 const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PLUGINS_DIR = path.join(BASE_DIR, 'plugins')
 const logger = pino({ level: 'silent' })
@@ -25,11 +22,7 @@ let reconnecting = false
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-// ══════════════════════════════════════
-// 💤 SISTEMA AFK
-// ══════════════════════════════════════
-
-
+// Sistema AFK
 const afkPath = path.join(BASE_DIR, 'database', 'afk.json')
 
 function leerAFK() {
@@ -54,28 +47,81 @@ function limpiarJid(jid = '') {
 }
 
 function numeroDeJid(jid = '') {
-    return limpiarJid(jid).replace(/@.+$/, '').replace(/\D/g, '')
+    const limpio = limpiarJid(jid)
+
+    if (limpio.endsWith('@lid')) return ''
+
+    return limpio
+        .replace(/@.+$/, '')
+        .replace(/\D/g, '')
 }
 
-function buscarAFK(grupoAFK, jid) {
-    const limpio = limpiarJid(jid)
-    const numero = numeroDeJid(limpio)
+function obtenerIdsParticipante(participante) {
+    if (!participante) return []
 
-    if (grupoAFK[limpio]) return limpio
+    return [
+        participante.id,
+        participante.jid,
+        participante.lid
+    ].filter(Boolean).map(limpiarJid)
+}
+
+function buscarAFK(grupoAFK, identificadores = []) {
+    const ids = [...new Set(
+        identificadores.filter(Boolean).map(limpiarJid)
+    )]
+
+    for (const id of ids) {
+        if (grupoAFK[id]) return id
+    }
+
+    const numeros = ids
+        .map(numeroDeJid)
+        .filter(numero => numero.length >= 8)
 
     return Object.keys(grupoAFK).find(clave => {
         const registro = grupoAFK[clave]
+        const numeroGuardado = String(registro?.numero || '')
+            .replace(/\D/g, '')
 
-        return numeroDeJid(clave) === numero ||
-            (
-                registro?.numero &&
-                String(registro.numero).replace(/\D/g, '') === numero
-            )
+        if (!numeroGuardado) return false
+
+        return numeros.includes(numeroGuardado)
     })
 }
 
+async function obtenerParticipante(sock, from, identificadores) {
+    try {
+        const metadata = await sock.groupMetadata(from)
+
+        const idsBuscados = new Set(
+            identificadores.filter(Boolean).map(limpiarJid)
+        )
+
+        const numerosBuscados = new Set(
+            identificadores.map(numeroDeJid).filter(n => n.length >= 8)
+        )
+
+        return metadata.participants.find(participante => {
+            const ids = obtenerIdsParticipante(participante)
+
+            if (ids.some(id => idsBuscados.has(id))) return true
+
+            return ids.some(id => {
+                const numero = numeroDeJid(id)
+                return numero && numerosBuscados.has(numero)
+            })
+        }) || null
+    } catch (error) {
+        console.error(chalk.red('❌ Error obteniendo participante:'), error.message)
+        return null
+    }
+}
+
+// Detectar menciones AFK
 async function detectarMencionesAFK(sock, message) {
     const from = message.key.remoteJid
+
     if (!from?.endsWith('@g.us')) return
 
     const msg = unwrapMessage(message.message)
@@ -102,40 +148,33 @@ async function detectarMencionesAFK(sock, message) {
 
     if (!Object.keys(grupoAFK).length) return
 
-    let metadata
-
-    try {
-        metadata = await sock.groupMetadata(from)
-    } catch {
-        return
-    }
-
     const avisos = []
     const vistos = new Set()
 
     for (const mencionado of mencionados) {
-        const clave = buscarAFK(grupoAFK, mencionado)
+        const participante = await obtenerParticipante(
+            sock,
+            from,
+            [mencionado]
+        )
+
+        const ids = [
+            mencionado,
+            ...obtenerIdsParticipante(participante)
+        ]
+
+        const clave = buscarAFK(grupoAFK, ids)
+
         if (!clave || vistos.has(clave)) continue
 
         vistos.add(clave)
 
         const registro = grupoAFK[clave]
-        const numero = registro.numero || numeroDeJid(clave)
-
-        const participante = metadata.participants.find(p => {
-            const ids = [p.id, p.jid, p.lid].filter(Boolean)
-
-            return ids.some(id =>
-                limpiarJid(id) === mencionado ||
-                numeroDeJid(id) === numero
-            )
-        })
-
         const jidReal = participante?.id || mencionado
 
         avisos.push({
             jid: jidReal,
-            numero,
+            numero: registro.numero || numeroDeJid(jidReal) || 'Usuario',
             razon: registro.razon || 'Sin razón especificada'
         })
     }
@@ -158,26 +197,44 @@ async function detectarMencionesAFK(sock, message) {
     }, { quoted: message })
 }
 
+// Detectar regreso AFK
 async function detectarRegresoAFK(sock, message) {
     const from = message.key.remoteJid
 
     if (!from?.endsWith('@g.us')) return
     if (message.key.fromMe) return
 
-    const sender =
-        message.key.participant ||
-        message.key.participantAlt
+    const identificadores = [
+        message.key.participant,
+        message.key.participantAlt,
+        message.participant,
+        message.sender,
+        message.senderLid
+    ].filter(Boolean).map(limpiarJid)
 
-    if (!sender) return
+    if (!identificadores.length) return
 
     const db = leerAFK()
     const grupoAFK = db[from] || {}
 
-    const clave = buscarAFK(grupoAFK, sender)
+    if (!Object.keys(grupoAFK).length) return
+
+    const participante = await obtenerParticipante(
+        sock,
+        from,
+        identificadores
+    )
+
+    if (participante) {
+        identificadores.push(...obtenerIdsParticipante(participante))
+    }
+
+    const clave = buscarAFK(grupoAFK, identificadores)
+
     if (!clave) return
 
     const registro = grupoAFK[clave]
-    const numero = registro.numero || numeroDeJid(sender)
+    const numero = registro.numero || numeroDeJid(clave) || 'Usuario'
 
     delete grupoAFK[clave]
 
@@ -189,23 +246,11 @@ async function detectarRegresoAFK(sock, message) {
 
     guardarAFK(db)
 
-    let metadata
-
-    try {
-        metadata = await sock.groupMetadata(from)
-    } catch {
-        metadata = { subject: 'Grupo' }
-    }
-
-    const participante = metadata.participants?.find(p => {
-        const ids = [p.id, p.jid, p.lid].filter(Boolean)
-        return ids.some(id =>
-            limpiarJid(id) === limpiarJid(sender) ||
-            numeroDeJid(id) === numero
-        )
-    })
-
-    const jidReal = participante?.id || sender
+    const jidReal =
+        participante?.id ||
+        identificadores.find(id => id.endsWith('@s.whatsapp.net')) ||
+        identificadores.find(id => id.endsWith('@lid')) ||
+        clave
 
     await sock.sendMessage(from, {
         text:
@@ -219,11 +264,7 @@ async function detectarRegresoAFK(sock, message) {
     }, { quoted: message })
 }
 
-
-// ══════════════════════════════════════
-// 📂 CARGAR PLUGINS
-// ══════════════════════════════════════
-
+// Cargar plugins
 async function loadPlugins() {
     plugins.clear()
 
@@ -264,9 +305,7 @@ async function loadPlugins() {
                     mod.handler
 
                 if (!handler) {
-                    console.log(
-                        chalk.yellow(`⚠ Sin handler: ${file.name}`)
-                    )
+                    console.log(chalk.yellow(`⚠ Sin handler: ${file.name}`))
                     continue
                 }
 
@@ -325,10 +364,7 @@ async function loadPlugins() {
     mostrarDiagnostico()
 }
 
-// ══════════════════════════════════════
-// 🔎 DIAGNÓSTICO DE PLUGINS Y CATEGORÍAS
-// ══════════════════════════════════════
-
+// Mostrar diagnóstico
 function mostrarDiagnostico() {
     const categorias = new Set()
     const archivosMenu = new Set()
@@ -364,10 +400,7 @@ function mostrarDiagnostico() {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
-// ══════════════════════════════════════
-// 📨 EXTRAER TEXTO Y RESPUESTAS
-// ══════════════════════════════════════
-
+// Desenvolver mensajes
 function unwrapMessage(message) {
     let current = message
 
@@ -385,6 +418,7 @@ function unwrapMessage(message) {
     return current || {}
 }
 
+// Obtener texto del mensaje
 function getMessageText(message) {
     const msg = unwrapMessage(message.message)
 
@@ -396,9 +430,7 @@ function getMessageText(message) {
 
     if (msg.imageMessage?.caption) return msg.imageMessage.caption
     if (msg.videoMessage?.caption) return msg.videoMessage.caption
-    if (msg.documentMessage?.caption) {
-        return msg.documentMessage.caption
-    }
+    if (msg.documentMessage?.caption) return msg.documentMessage.caption
 
     if (msg.buttonsResponseMessage?.selectedButtonId) {
         return msg.buttonsResponseMessage.selectedButtonId
@@ -435,10 +467,7 @@ function getMessageText(message) {
     return ''
 }
 
-// ══════════════════════════════════════
-// 👑 IDENTIFICAR OWNERS
-// ══════════════════════════════════════
-
+// Identificar owners
 function normalizeId(value) {
     return String(value || '')
         .trim()
@@ -475,10 +504,7 @@ function isOwnerMessage(sender) {
     return matchesNumber || matchesLid
 }
 
-// ══════════════════════════════════════
-// 📨 NORMALIZAR MENSAJES
-// ══════════════════════════════════════
-
+// Normalizar mensajes
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
@@ -505,10 +531,7 @@ function normalizeMessage(message, sock) {
     }
 }
 
-// ══════════════════════════════════════
-// ⚡ DETECTAR COMANDOS
-// ══════════════════════════════════════
-
+// Detectar comandos
 function parseCommand(text) {
     if (!text || typeof text !== 'string') return null
 
@@ -536,10 +559,7 @@ function parseCommand(text) {
     }
 }
 
-// ══════════════════════════════════════
-// 🖥️ REGISTRO DE COMANDOS
-// ══════════════════════════════════════
-
+// Registrar comandos
 async function logCommand(m, parsed, sock) {
     let groupName = 'Chat privado'
 
@@ -568,10 +588,7 @@ async function logCommand(m, parsed, sock) {
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
-// ══════════════════════════════════════
-// ⚙️ EJECUTAR PLUGINS
-// ══════════════════════════════════════
-
+// Ejecutar plugins
 async function executePlugin(plugin, m, parsed, sock) {
     const { handler, module } = plugin
 
@@ -607,10 +624,7 @@ async function executePlugin(plugin, m, parsed, sock) {
     }
 }
 
-// ══════════════════════════════════════
-// 📩 PROCESAR COMANDOS
-// ══════════════════════════════════════
-
+// Procesar mensajes
 async function processMessage(message, sock) {
     if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
@@ -618,14 +632,11 @@ async function processMessage(message, sock) {
     const chat = message.key.remoteJid
     if (chat === 'status@broadcast') return
 
-    // Detectar menciones AFK antes de comprobar el prefijo.
     try {
+        await detectarRegresoAFK(sock, message)
         await detectarMencionesAFK(sock, message)
     } catch (error) {
-        console.error(
-            chalk.red('❌ Error detectando menciones AFK:'),
-            error
-        )
+        console.error(chalk.red('❌ Error en sistema AFK:'), error)
     }
 
     const m = normalizeMessage(message, sock)
@@ -664,10 +675,7 @@ async function processMessage(message, sock) {
     }
 }
 
-// ══════════════════════════════════════
-// 🔌 CONEXIÓN Y RECONEXIÓN
-// ══════════════════════════════════════
-
+// Conectar socket
 async function attachSocket(sock) {
     activeSock = sock
 
@@ -746,10 +754,7 @@ async function attachSocket(sock) {
     })
 }
 
-// ══════════════════════════════════════
-// 🚀 INICIAR BOT
-// ══════════════════════════════════════
-
+// Iniciar bot
 async function start() {
     if (typeof config.PREFIX !== 'string' || !config.PREFIX) {
         throw new Error('Define PREFIX como texto en config.js')
@@ -765,7 +770,6 @@ async function start() {
 
     console.log(chalk.green('✅ PEPE BOT está listo.'))
 
-    // Resumen final para localizar diferencias entre Termux y servidor.
     console.log(chalk.gray('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
     console.log(chalk.greenBright.bold('🐸 RESUMEN FINAL DE PEPE BOT'))
     console.log(chalk.cyan('📂 Plugins: ') + PLUGINS_DIR)
