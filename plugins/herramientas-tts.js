@@ -104,7 +104,7 @@ handler.voice = async (sock, m, args = []) => {
         await sock.sendMessage(chat, {
             audio: { url: resultado.url },
             mimetype: 'audio/mpeg',
-            ptt: true
+            ptt: false
         }, { quoted: m })
 
         textosPendientes.delete(clave)
