@@ -10,11 +10,13 @@ handler.run = async (sock, m, args) => {
         const texto = args.join(' ').trim()
 
         if (!texto) {
-            return m.reply('> 🐸 Escribe el texto para crear tu Brat.\n\nEjemplo: *.brat Pepe Bot*')
+            return m.reply(
+                '🐸 Escribe el texto para crear tu Brat.\n\nEjemplo: *.brat Pepe Bot*'
+            )
         }
 
         if (texto.length > 500) {
-            return m.reply('> ❌ El texto no puede superar los 500 caracteres.')
+            return m.reply('❌ Máximo 500 caracteres.')
         }
 
         await sock.sendMessage(m.chat, {
@@ -27,13 +29,16 @@ handler.run = async (sock, m, args) => {
         const response = await axios.get(API_URL, {
             params: { text: texto },
             responseType: 'arraybuffer',
-            timeout: 60000
+            timeout: 60000,
+            headers: {
+                Accept: 'image/*'
+            }
         })
 
         const imagen = Buffer.from(response.data)
 
         if (!imagen.length) {
-            throw new Error('La API no devolvió ninguna imagen.')
+            throw new Error('La API no devolvió una imagen.')
         }
 
         const webp = await toSticker(imagen)
@@ -51,9 +56,9 @@ handler.run = async (sock, m, args) => {
             }
         })
     } catch (error) {
-        console.error('Error en .brat:', error.response?.data || error)
+        console.error('Error .brat:', error.message)
 
-        await m.reply('❌ No se pudo generar el Brat. Inténtalo nuevamente.')
+        await m.reply('❌ No se pudo generar el Brat.')
     }
 }
 
