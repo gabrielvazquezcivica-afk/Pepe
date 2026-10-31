@@ -74,11 +74,11 @@ handler.run = async (sock, m, args) => {
         await img.load(input)
 
         const exifData = {
-            'sticker-pack-id': `pepe-${id}`,
-            'sticker-pack-name': texto,
-            'sticker-pack-publisher': m.pushName || 'WhatsApp',
-            emojis: [reaccionTipo]
-        }
+    'sticker-pack-id': `pepe-${id}`,
+    'sticker-pack-name': texto,
+    'sticker-pack-publisher': '',
+    emojis: [reaccionTipo]
+}
 
         const json = Buffer.from(
             JSON.stringify(exifData),
