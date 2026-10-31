@@ -1,6 +1,6 @@
 
-import fs from 'fs'
-import path from 'path'
+import fs from 'node:fs'
+import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
 
 const DB_DIR = './database'
@@ -43,7 +43,7 @@ function obtenerNombre(m) {
     return m.pushName || 'Jugador'
 }
 
-function crearLista() {
+function crearDatosLista() {
     return {
         jugadores: [],
         suplentes: [],
@@ -87,7 +87,7 @@ async function actualizarLista(sock, chat, lista, quoted) {
                 delete: lista.messageKey
             })
         } catch (error) {
-            console.error('Error eliminando lista anterior:', error.message)
+            console.error('[4VS4] Error eliminando lista anterior:', error.message)
         }
     }
 
@@ -124,7 +124,7 @@ async function actualizarLista(sock, chat, lista, quoted) {
 async function crearLista(sock, m) {
     const chat = m.key.remoteJid
 
-    if (!chat.endsWith('@g.us')) {
+    if (!chat?.endsWith('@g.us')) {
         return m.reply('❌ Este comando solamente funciona en grupos.')
     }
 
@@ -134,7 +134,7 @@ async function crearLista(sock, m) {
         return m.reply('⚠️ Ya existe una lista 4VS4 en este grupo.')
     }
 
-    const lista = crearLista()
+    const lista = crearDatosLista()
 
     db[chat] = lista
     guardarDB(db)
@@ -231,7 +231,7 @@ async function suplente(sock, m) {
 async function cerrar(sock, m) {
     const chat = m.key.remoteJid
 
-    if (!chat.endsWith('@g.us')) {
+    if (!chat?.endsWith('@g.us')) {
         return m.reply('❌ Este comando solamente funciona en grupos.')
     }
 
@@ -251,7 +251,9 @@ async function cerrar(sock, m) {
             await sock.sendMessage(chat, {
                 delete: lista.messageKey
             })
-        } catch {}
+        } catch (error) {
+            console.error('[4VS4] Error eliminando lista:', error.message)
+        }
     }
 
     delete db[chat]
