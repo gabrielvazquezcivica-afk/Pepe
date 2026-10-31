@@ -64,7 +64,7 @@ handler.run = async (sock, m, args) => {
 
 handler.command = ['bratv']
 handler.help = ['bratv <texto>']
-handler.tags = ['herramientas']
+handler.tags = ['stickers']
 handler.menu = true
 
 export default handler
