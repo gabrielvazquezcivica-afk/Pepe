@@ -5,15 +5,9 @@ import { sendButtons } from 'baileys-buttons'
 const API_URL = 'https://api-faa.my.id/faa/tts-legkap'
 
 const voces = [
-    { id: 'nahida', nombre: 'Nahida' },
-    { id: 'nami', nombre: 'Nami' },
-    { id: 'ana', nombre: 'Ana' },
     { id: 'optimus_prime', nombre: 'Optimus Prime' },
-    { id: 'goku', nombre: 'Goku' },
-    { id: 'elon_musk', nombre: 'Elon Musk' },
     { id: 'mickey_mouse', nombre: 'Mickey Mouse' },
-    { id: 'kendrick_lamar', nombre: 'Kendrick Lamar' },
-    { id: 'eminem', nombre: 'Eminem' }
+    { id: 'goku', nombre: 'Goku' }
 ]
 
 const textosPendientes = new Map()
@@ -24,40 +18,16 @@ function crearClave(m) {
     return `${m.key.remoteJid}:${m.key.participant || m.key.remoteJid}`
 }
 
-// Mostrar las voces en tres mensajes de tres botones
-async function mostrarVoces(sock, m, texto) {
-    const chat = m.key.remoteJid
-    const clave = crearClave(m)
-
-    textosPendientes.set(clave, texto)
-
-    for (let i = 0; i < voces.length; i += 3) {
-        const grupo = voces.slice(i, i + 3)
-
-        const buttons = grupo.map(voz => ({
-            id: `.ttsvoice ${voz.id}`,
-            displayText: `🎙️ ${voz.nombre}`
-        }))
-
-        await sendButtons(sock, chat, {
-            title: '🐸 PEPE BOT',
-            text: `🎧 *Selecciona una voz* (${i + 1}-${i + grupo.length} de ${voces.length})\n\n📝 Texto: ${texto}`,
-            footer: 'PEPE BOT • TTS',
-            buttons,
-            quoted: m
-        })
-    }
-}
-
-// Comando .tts
+// Mostrar los tres botones
 handler.run = async (sock, m, args = []) => {
     const texto = args.join(' ').trim()
+    const chat = m.key.remoteJid
 
     if (!texto) {
         return m.reply(
             '🐸 *PEPE BOT — TTS*\n\n' +
             'Escribe el texto que quieres convertir en audio.\n\n' +
-            'Ejemplo:\n.tts Hola, ¿cómo estás?'
+            'Ejemplo:\n.tts Hola grupo'
         )
     }
 
@@ -66,15 +36,28 @@ handler.run = async (sock, m, args = []) => {
     }
 
     try {
-        await sock.sendMessage(m.key.remoteJid, {
+        textosPendientes.set(crearClave(m), texto)
+
+        await sock.sendMessage(chat, {
             react: { text: '🎙️', key: m.key }
         }).catch(() => {})
 
-        await mostrarVoces(sock, m, texto)
+        const buttons = voces.map(voz => ({
+            id: `.ttsvoice ${voz.id}`,
+            displayText: `🎙️ ${voz.nombre}`
+        }))
+
+        await sendButtons(sock, chat, {
+            title: '🐸 PEPE BOT',
+            text: `📝 *Texto:*\n${texto}\n\n🎧 Selecciona una voz:`,
+            footer: 'PEPE BOT • TTS',
+            buttons,
+            quoted: m
+        })
 
     } catch (error) {
         console.error('[TTS MENU]', error)
-        await m.reply('❌ No se pudieron enviar los botones.')
+        await m.reply('❌ No se pudieron mostrar los botones.')
     }
 }
 
@@ -87,7 +70,7 @@ handler.voice = async (sock, m, args = []) => {
     const voz = voces.find(v => v.id === modelo)
 
     if (!voz) {
-        return m.reply('❌ La voz seleccionada no existe.')
+        return m.reply('❌ Voz no válida.')
     }
 
     const texto = textosPendientes.get(clave)
@@ -121,7 +104,7 @@ handler.voice = async (sock, m, args = []) => {
         await sock.sendMessage(chat, {
             audio: { url: resultado.url },
             mimetype: 'audio/mpeg',
-            ptt: false
+            ptt: true
         }, { quoted: m })
 
         textosPendientes.delete(clave)
@@ -137,7 +120,7 @@ handler.voice = async (sock, m, args = []) => {
             react: { text: '❌', key: m.key }
         }).catch(() => {})
 
-        await m.reply('❌ Ocurrió un error al generar el audio.')
+        await m.reply('❌ Error al generar el audio.')
     }
 }
 
