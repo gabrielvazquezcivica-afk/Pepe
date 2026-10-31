@@ -1,3 +1,4 @@
+
 import config from '../config.js'
 
 const handler = {}
@@ -6,15 +7,27 @@ const limpiarNumero = jid =>
     String(jid || '').replace(/\D/g, '')
 
 const normalizar = jid =>
-    String(jid || '').split(':')[0]
+    String(jid || '').replace(/:\d+@/, '@').trim()
 
 const esAdmin = participante =>
-    participante?.admin === 'admin' ||
-    participante?.admin === 'superadmin'
+    ['admin', 'superadmin'].includes(participante?.admin)
+
+const buscar = (participantes, identificadores = []) => {
+    const ids = identificadores
+        .filter(Boolean)
+        .map(normalizar)
+
+    return participantes.find(p => {
+        const idsParticipante = [p.id, p.jid, p.lid]
+            .filter(Boolean)
+            .map(normalizar)
+
+        return idsParticipante.some(id => ids.includes(id))
+    })
+}
 
 handler.run = async (sock, m, args = []) => {
     const chat = m.key.remoteJid
-    const sender = m.key.participant || m.participant || m.sender
 
     const reaccion = async emoji => {
         try {
@@ -31,34 +44,38 @@ handler.run = async (sock, m, args = []) => {
             { quoted: m }
         )
 
+    // Comprobar que sea un grupo.
     if (!chat?.endsWith('@g.us')) {
         await reaccion('❌')
         return aviso('> 🐸 Este comando solo funciona en grupos.')
     }
 
+    // Obtener participantes.
     let metadata
 
     try {
         metadata = await sock.groupMetadata(chat)
-    } catch {
+    } catch (error) {
+        console.error('[KICK] Error obteniendo metadata:', error)
         await reaccion('❌')
         return aviso('> ❌ No pude obtener los datos del grupo.')
     }
 
     const participantes = metadata.participants || []
 
-    const buscar = jid => {
-        if (!jid) return undefined
-
-        return participantes.find(p =>
-            [p.id, p.jid, p.lid]
-                .filter(Boolean)
-                .some(id => id === jid)
-        )
-    }
-
     // Identificar al administrador que ejecuta el comando.
-    const adminEjecutor = buscar(sender)
+    const idsEjecutor = [
+        m.key?.participant,
+        m.key?.participantAlt,
+        m.participant,
+        m.sender,
+        m.senderLid
+    ]
+
+    const adminEjecutor = buscar(participantes, idsEjecutor)
+
+    console.log('[KICK] IDs del ejecutor:', idsEjecutor)
+    console.log('[KICK] Administrador encontrado:', adminEjecutor)
 
     if (!esAdmin(adminEjecutor)) {
         await reaccion('🚫')
@@ -68,29 +85,24 @@ handler.run = async (sock, m, args = []) => {
     // Identificar al bot.
     const botId = sock.user?.id || ''
     const botNumero = botId.split(':')[0].split('@')[0]
-    const botJid = `${botNumero}@s.whatsapp.net`
 
-    let botInfo =
-        buscar(botId) ||
-        buscar(botJid) ||
-        buscar(sock.user?.lid)
+    const idsBot = [
+        botId,
+        sock.user?.lid,
+        `${botNumero}@s.whatsapp.net`
+    ]
 
-    if (!botInfo) {
-        botInfo = participantes.find(p =>
-            [p.id, p.jid, p.lid]
-                .filter(Boolean)
-                .some(id =>
-                    limpiarNumero(id) === limpiarNumero(botNumero)
-                )
-        )
-    }
+    const botInfo = buscar(participantes, idsBot)
+
+    console.log('[KICK] IDs del bot:', idsBot)
+    console.log('[KICK] Bot encontrado:', botInfo)
 
     if (!esAdmin(botInfo)) {
         await reaccion('⚠️')
         return aviso('> ⚠️ No pude confirmar que PEPE BOT sea administrador.')
     }
 
-    // Menciones y usuario citado.
+    // Obtener menciones y usuario citado.
     const contexto =
         m.message?.extendedTextMessage?.contextInfo ||
         m.message?.imageMessage?.contextInfo ||
@@ -117,8 +129,11 @@ handler.run = async (sock, m, args = []) => {
         }
     }
 
-    const unicos = [...new Set(objetivos)]
+    const unicos = [
+        ...new Set(objetivos.filter(Boolean))
+    ]
 
+    // Aviso de uso cuando no hay objetivos.
     if (!unicos.length) {
         await reaccion('❌')
 
@@ -142,12 +157,14 @@ handler.run = async (sock, m, args = []) => {
                     '> También puedes responder a un mensaje con .kick',
                 edit: mensaje.key
             })
-        } catch {}
+        } catch (error) {
+            console.error('[KICK] No se pudo editar el aviso:', error)
+        }
 
         return
     }
 
-    // Protección del dueño del grupo y del propietario del bot.
+    // Proteger al dueño del grupo y al propietario del bot.
     const ownerGrupo =
         metadata.owner ||
         participantes.find(p => p.admin === 'superadmin')?.id
@@ -158,15 +175,27 @@ handler.run = async (sock, m, args = []) => {
 
     const ownerLids = (config.ownerLid || [])
         .filter(Boolean)
-        .map(String)
+        .map(normalizar)
 
-    const esOwnerBot = p =>
-        [p?.id, p?.jid, p?.lid]
+    const esOwnerBot = participante =>
+        [participante?.id, participante?.jid, participante?.lid]
             .filter(Boolean)
             .some(id =>
                 owners.includes(limpiarNumero(id)) ||
-                ownerLids.includes(String(id))
+                ownerLids.includes(normalizar(id))
             )
+
+    const esDuenoGrupo = participante => {
+        if (!ownerGrupo) return false
+
+        const ids = [
+            participante?.id,
+            participante?.jid,
+            participante?.lid
+        ].filter(Boolean).map(normalizar)
+
+        return ids.includes(normalizar(ownerGrupo))
+    }
 
     const expulsados = []
     const protegidos = []
@@ -174,34 +203,36 @@ handler.run = async (sock, m, args = []) => {
 
     await reaccion('🛡️')
 
+    // Procesar objetivos.
     for (const jid of unicos) {
-        const p = buscar(jid)
+        const participante = buscar(participantes, [jid])
 
-        if (!p) {
+        if (!participante) {
             fallidos.push(jid)
             continue
         }
 
-        const ids = [p.id, p.jid, p.lid].filter(Boolean)
-
-        const esDuenoGrupo = Boolean(ownerGrupo) &&
-            ids.some(id => normalizar(id) === normalizar(ownerGrupo))
-
-        if (esOwnerBot(p) || esDuenoGrupo) {
-            protegidos.push(p.id)
+        if (esOwnerBot(participante) || esDuenoGrupo(participante)) {
+            protegidos.push(participante.id)
             continue
         }
 
-        // Se permite expulsar administradores normales.
+        // Se permiten expulsar administradores normales.
         try {
-            await sock.groupParticipantsUpdate(chat, [p.id], 'remove')
-            expulsados.push(p.id)
+            await sock.groupParticipantsUpdate(
+                chat,
+                [participante.id],
+                'remove'
+            )
+
+            expulsados.push(participante.id)
         } catch (error) {
-            console.error('Error expulsando usuario:', error)
-            fallidos.push(p.id)
+            console.error('[KICK] Error expulsando:', error)
+            fallidos.push(participante.id)
         }
     }
 
+    // Preparar el reporte.
     const lista = (titulo, usuarios) =>
         usuarios.length
             ? `${titulo}\n${usuarios.map(jid =>
@@ -210,10 +241,17 @@ handler.run = async (sock, m, args = []) => {
             : ''
 
     let texto = '> 🐸 *PEPE BOT — EXPULSIONES*\n\n'
+
     texto += lista('> ✅ *Expulsados:*', expulsados)
     texto += lista('> 👑 *Protegidos:*', protegidos)
     texto += lista('> ❌ *No se pudieron expulsar:*', fallidos)
-    texto += `> 👮 *Acción realizada por:* @${limpiarNumero(sender)}\n`
+
+    const ejecutorId =
+        adminEjecutor.id ||
+        m.sender ||
+        m.key.participant
+
+    texto += `> 👮 *Acción realizada por:* @${limpiarNumero(ejecutorId)}\n`
     texto += `> 🐸 ${config.BOT_NAME || 'PEPE BOT'}`
 
     await reaccion(expulsados.length ? '✅' : '⚠️')
@@ -224,8 +262,8 @@ handler.run = async (sock, m, args = []) => {
             ...expulsados,
             ...protegidos,
             ...fallidos,
-            sender
-        ])]
+            ejecutorId
+        ].filter(Boolean))]
     )
 }
 
