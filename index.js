@@ -684,6 +684,19 @@ async function executePlugin(plugin, m, parsed, sock) {
     }
 }
 
+const modoAdminPath = path.join(BASE_DIR, 'database', 'modoadmin.json')
+
+function leerModoAdmin() {
+    try {
+        if (!fs.existsSync(modoAdminPath)) return {}
+
+        const contenido = fs.readFileSync(modoAdminPath, 'utf8')
+        return contenido.trim() ? JSON.parse(contenido) : {}
+    } catch {
+        return {}
+    }
+}
+
 // Procesar mensajes
 
 async function processMessage(message, sock) {
