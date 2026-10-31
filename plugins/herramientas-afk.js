@@ -1,5 +1,6 @@
-import fs from 'fs'
-import path from 'path'
+
+import fs from 'node:fs'
+import path from 'node:path'
 
 const ruta = path.join(process.cwd(), 'database', 'afk.json')
 
@@ -10,7 +11,8 @@ function leerDB() {
             fs.writeFileSync(ruta, '{}')
         }
 
-        return JSON.parse(fs.readFileSync(ruta, 'utf8'))
+        const contenido = fs.readFileSync(ruta, 'utf8')
+        return contenido.trim() ? JSON.parse(contenido) : {}
     } catch {
         return {}
     }
@@ -28,7 +30,7 @@ function limpiarJid(jid = '') {
 function numeroDeJid(jid = '') {
     return limpiarJid(jid)
         .replace(/@.+$/, '')
-        .replace(/[^0-9]/g, '')
+        .replace(/\D/g, '')
 }
 
 const handler = {}
@@ -37,50 +39,43 @@ handler.run = async (sock, m, args = []) => {
     const from = m.key.remoteJid
 
     if (!from?.endsWith('@g.us')) {
-        return sock.sendMessage(from, {
-            text: '> ❌ Este comando solo funciona en grupos.'
-        }, { quoted: m })
+        return m.reply('❌ Este comando solo funciona en grupos.')
     }
 
-    const sender = limpiarJid(
+    const sender =
         m.key.participant ||
         m.key.participantAlt ||
         m.sender
-    )
 
+    if (!sender) {
+        return m.reply('❌ No pude identificar tu usuario.')
+    }
+
+    const jid = limpiarJid(sender)
+    const numero = numeroDeJid(jid)
     const razon = args.join(' ').trim() || 'Sin razón especificada'
 
     const db = leerDB()
 
     if (!db[from]) db[from] = {}
 
-    db[from][sender] = {
+    db[from][jid] = {
         razon,
         timestamp: Date.now(),
-        numero: numeroDeJid(sender)
+        numero
     }
 
     guardarDB(db)
 
-    let nombreGrupo = 'Grupo'
-
-    try {
-        const metadata = await sock.groupMetadata(from)
-        nombreGrupo = metadata.subject || 'Grupo'
-    } catch {}
-
     return sock.sendMessage(from, {
         text:
 `╭─── ⋆⋅☆⋅⋆ ───╮
-       💤 *𝐔𝐒𝐔𝐀𝐑𝐈𝐎 𝐀𝐅𝐊*
+       💤 𝐔𝐒𝐔𝐀𝐑𝐈𝐎 𝐀𝐅𝐊
 ╰─── ⋆⋅☆⋅⋆ ───╯
 
-> 🐸 @${numeroDeJid(sender)}
+> 🐸 @${numero}
 > 💬 Se encuentra ausente.
-> 📝 Razón: ${razon}
-
-─── ⋆⋅☆⋅⋆ ──
-> 🌿 ${nombreGrupo}`,
+> 📝 Razón: ${razon}`,
         mentions: [sender]
     }, { quoted: m })
 }
@@ -89,5 +84,6 @@ handler.command = ['afk']
 handler.help = ['afk <razón>']
 handler.tags = ['herramientas']
 handler.menu = true
+handler.group = true
 
 export default handler
