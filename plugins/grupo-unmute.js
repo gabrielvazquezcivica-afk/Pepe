@@ -7,16 +7,37 @@ const DB_FILE = path.join(DB_DIR, 'muteados.json')
 
 const handler = {}
 
+const normalizar = jid =>
+    String(jid || '').replace(/:\d+@/, '@').trim()
+
+const limpiarNumero = jid =>
+    String(jid || '').replace(/\D/g, '')
+
+const esAdmin = participante =>
+    ['admin', 'superadmin'].includes(participante?.admin)
+
+const buscar = (participantes, identificadores = []) => {
+    const ids = identificadores.filter(Boolean).map(normalizar)
+
+    return participantes.find(p => {
+        const idsParticipante = [p.id, p.jid, p.lid]
+            .filter(Boolean)
+            .map(normalizar)
+
+        return idsParticipante.some(id => ids.includes(id))
+    })
+}
+
 function cargarDB() {
-    if (!fs.existsSync(DB_DIR)) {
-        fs.mkdirSync(DB_DIR, { recursive: true })
-    }
-
-    if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, '{}')
-    }
-
     try {
+        if (!fs.existsSync(DB_DIR)) {
+            fs.mkdirSync(DB_DIR, { recursive: true })
+        }
+
+        if (!fs.existsSync(DB_FILE)) {
+            fs.writeFileSync(DB_FILE, '{}')
+        }
+
         return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
     } catch {
         return {}
@@ -31,54 +52,61 @@ function guardarDB(db) {
     fs.renameSync(temporal, DB_FILE)
 }
 
-function limpiarJid(jid = '') {
-    return String(jid).replace(/:\d+@/, '@').trim()
+async function obtenerPermisos(sock, m) {
+    try {
+        const chat = m.key.remoteJid
+        const metadata = await sock.groupMetadata(chat)
+        const participantes = metadata.participants || []
+
+        const idsEjecutor = [
+            m.key?.participant,
+            m.key?.participantAlt,
+            m.participant,
+            m.sender,
+            m.senderLid
+        ]
+
+        const adminEjecutor = buscar(participantes, idsEjecutor)
+
+        if (!esAdmin(adminEjecutor)) {
+            return { admin: false, botAdmin: false }
+        }
+
+        const botId = sock.user?.id || ''
+        const botNumero = botId.split(':')[0].split('@')[0]
+
+        const idsBot = [
+            botId,
+            sock.user?.lid,
+            `${botNumero}@s.whatsapp.net`
+        ]
+
+        const botInfo = buscar(participantes, idsBot)
+
+        return {
+            admin: true,
+            botAdmin: esAdmin(botInfo)
+        }
+    } catch {
+        return { admin: false, botAdmin: false }
+    }
 }
 
 function obtenerObjetivo(m) {
+    const contexto =
+        m.message?.extendedTextMessage?.contextInfo ||
+        m.message?.imageMessage?.contextInfo ||
+        m.message?.videoMessage?.contextInfo ||
+        m.message?.documentMessage?.contextInfo ||
+        {}
+
     return (
+        contexto.mentionedJid?.[0] ||
+        contexto.participant ||
         m.mentionedJid?.[0] ||
         m.quoted?.sender ||
         null
     )
-}
-
-async function esAdmin(sock, m) {
-    if (m.isAdmin === true) return true
-
-    try {
-        const metadata = await sock.groupMetadata(m.key.remoteJid)
-        const id = limpiarJid(m.sender || m.key.participant)
-
-        const participante = metadata.participants.find(p =>
-            [p.id, p.lid].filter(Boolean).map(limpiarJid).includes(id)
-        )
-
-        return Boolean(
-            participante?.admin === 'admin' ||
-            participante?.admin === 'superadmin'
-        )
-    } catch {
-        return false
-    }
-}
-
-async function esBotAdmin(sock, chat) {
-    try {
-        const metadata = await sock.groupMetadata(chat)
-        const botId = limpiarJid(sock.user.id)
-
-        const bot = metadata.participants.find(p =>
-            [p.id, p.lid].filter(Boolean).map(limpiarJid).includes(botId)
-        )
-
-        return Boolean(
-            bot?.admin === 'admin' ||
-            bot?.admin === 'superadmin'
-        )
-    } catch {
-        return false
-    }
 }
 
 handler.run = async (sock, m) => {
@@ -88,26 +116,27 @@ handler.run = async (sock, m) => {
         return m.reply('> ❌ Este comando solamente funciona en grupos.')
     }
 
-    if (!(await esAdmin(sock, m))) {
-        return m.reply('> ⚠️ Solamente los administradores pueden usar este comando.')
+    const permisos = await obtenerPermisos(sock, m)
+
+    if (!permisos.admin) {
+        return m.reply('> 🚫 Solo los administradores pueden usar .unmute.')
     }
 
-    if (!(await esBotAdmin(sock, chat))) {
-        return m.reply('> ⚠️ Necesito ser administrador del grupo para administrar los usuarios muteados.')
+    if (!permisos.botAdmin) {
+        return m.reply('> ⚠️ Necesito ser administrador del grupo para administrar los muteados.')
     }
 
     const objetivo = obtenerObjetivo(m)
 
     if (!objetivo) {
-        return m.reply('> ⚠️ Menciona o responde al usuario que quieres desmutear.')
+        return m.reply('> ⚠️ Menciona al usuario o responde a uno de sus mensajes.')
     }
 
     const db = cargarDB()
-    const muteados = db[chat] || []
-    const objetivoLimpio = limpiarJid(objetivo)
+    const muteados = Array.isArray(db[chat]) ? db[chat] : []
 
     const posicion = muteados.findIndex(
-        jid => limpiarJid(jid) === objetivoLimpio
+        jid => normalizar(jid) === normalizar(objetivo)
     )
 
     if (posicion === -1) {
@@ -124,18 +153,22 @@ handler.run = async (sock, m) => {
 
     guardarDB(db)
 
-    const usuarioNumero = objetivo.split('@')[0]
-    const adminNumero = (m.sender || '').split('@')[0]
+    const ejecutor = m.sender || m.key.participant
+    const usuarioNumero = limpiarNumero(objetivo)
+    const adminNumero = limpiarNumero(ejecutor)
 
     await sock.sendMessage(chat, {
-        text: `> ✅ @${usuarioNumero} fue desmuteado por @${adminNumero}`,
-        mentions: [objetivo, m.sender].filter(Boolean)
+        text: `> 🔊 @${usuarioNumero} fue desmuteado por @${adminNumero}`,
+        mentions: [objetivo, ejecutor].filter(Boolean)
     }, { quoted: m })
 }
 
 handler.command = ['unmute']
-handler.help = ['unmute']
+handler.help = ['unmute @usuario']
 handler.tags = ['grupo']
 handler.menu = true
+handler.group = true
+handler.admin = true
+handler.botAdmin = true
 
 export default handler
