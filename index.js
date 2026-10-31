@@ -685,6 +685,7 @@ async function executePlugin(plugin, m, parsed, sock) {
 }
 
 // Procesar mensajes
+
 async function processMessage(message, sock) {
     if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
@@ -692,8 +693,8 @@ async function processMessage(message, sock) {
     const chat = message.key.remoteJid
     if (chat === 'status@broadcast') return
 
-// Revisar si el usuario está muteado
-if (await revisarMuteado(sock, message)) return
+    // Revisar si el usuario está muteado
+    if (await revisarMuteado(sock, message)) return
 
     try {
         await detectarRegresoAFK(sock, message)
@@ -712,52 +713,20 @@ if (await revisarMuteado(sock, message)) return
     const matches = plugins.get(parsed.command)
     if (!matches?.length) return
 
+    // Modo Admin por grupo
+    const modoAdmin = leerModoAdmin()
 
-const modoAdminPath = path.join(BASE_DIR, 'database', 'modoadmin.json')
+    if (m.isGroup && modoAdmin[chat] === true) {
+        const admin = await usuarioEsAdmin(sock, message)
 
-function leerModoAdmin() {
-    try {
-        if (!fs.existsSync(modoAdminPath)) return {}
+        if (!admin) {
+            const permitido = matches.some(plugin =>
+                esComandoFreeFire(plugin.handler)
+            )
 
-        const contenido = fs.readFileSync(modoAdminPath, 'utf8')
-        return contenido.trim() ? JSON.parse(contenido) : {}
-    } catch {
-        return {}
+            if (!permitido) return
+        }
     }
-}
-
-async function usuarioEsAdmin(sock, message) {
-    try {
-        const chat = message.key.remoteJid
-        const metadata = await sock.groupMetadata(chat)
-        const participantes = metadata.participants || []
-
-        const ids = [
-            message.key?.participant,
-            message.key?.participantAlt,
-            message.participant,
-            message.sender,
-            message.senderLid
-        ].filter(Boolean).map(limpiarJid)
-
-        const participante = participantes.find(p =>
-            obtenerIdsParticipante(p).some(id => ids.includes(id))
-        )
-
-        return ['admin', 'superadmin'].includes(participante?.admin)
-    } catch {
-        return false
-    }
-}
-
-function esComandoFreeFire(handler) {
-    const tags = (handler.tags || []).map(tag =>
-        String(tag).toLowerCase().replace(/[\s_-]/g, '')
-    )
-
-    return tags.includes('freefire') || tags.includes('ff')
-}
-
 
     const isBanCommand = ['ban', 'unban'].includes(parsed.command)
 
