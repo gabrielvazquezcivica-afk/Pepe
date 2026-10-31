@@ -1,79 +1,18 @@
+function limpiarJid(jid = '') {
+  return String(jid).replace(/:\d+@/, '@').trim()
+}
 
-const handler = {}
-
-const normalizar = jid =>
-    String(jid || '').replace(/:\d+@/, '@').trim()
-
-const esAdmin = participante =>
-    ['admin', 'superadmin'].includes(participante?.admin)
-
-// Banderas por prefijo telefónico.
-const banderas = {
-    '1': '🇺🇸',
-    '7': '🇷🇺',
-    '20': '🇪🇬',
-    '27': '🇿🇦',
-    '30': '🇬🇷',
-    '31': '🇳🇱',
-    '32': '🇧🇪',
-    '33': '🇫🇷',
-    '34': '🇪🇸',
-    '36': '🇭🇺',
-    '39': '🇮🇹',
-    '40': '🇷🇴',
-    '41': '🇨🇭',
-    '43': '🇦🇹',
-    '44': '🇬🇧',
-    '45': '🇩🇰',
-    '46': '🇸🇪',
-    '47': '🇳🇴',
-    '48': '🇵🇱',
-    '49': '🇩🇪',
-    '51': '🇵🇪',
+function obtenerBandera(numero = '') {
+  const prefijos = {
     '52': '🇲🇽',
-    '53': '🇨🇺',
+    '1': '🇺🇸',
+    '57': '🇨🇴',
     '54': '🇦🇷',
     '55': '🇧🇷',
     '56': '🇨🇱',
-    '57': '🇨🇴',
+    '51': '🇵🇪',
     '58': '🇻🇪',
-    '60': '🇲🇾',
-    '61': '🇦🇺',
-    '62': '🇮🇩',
-    '63': '🇵🇭',
-    '64': '🇳🇿',
-    '65': '🇸🇬',
-    '66': '🇹🇭',
-    '81': '🇯🇵',
-    '82': '🇰🇷',
-    '84': '🇻🇳',
-    '86': '🇨🇳',
-    '90': '🇹🇷',
-    '91': '🇮🇳',
-    '92': '🇵🇰',
-    '93': '🇦🇫',
-    '94': '🇱🇰',
-    '95': '🇲🇲',
-    '98': '🇮🇷',
-    '212': '🇲🇦',
-    '213': '🇩🇿',
-    '216': '🇹🇳',
-    '218': '🇱🇾',
-    '234': '🇳🇬',
-    '254': '🇰🇪',
-    '255': '🇹🇿',
-    '256': '🇺🇬',
-    '351': '🇵🇹',
-    '352': '🇱🇺',
-    '353': '🇮🇪',
-    '354': '🇮🇸',
-    '358': '🇫🇮',
-    '370': '🇱🇹',
-    '371': '🇱🇻',
-    '372': '🇪🇪',
-    '380': '🇺🇦',
-    '420': '🇨🇿',
-    '421': '🇸🇰',
+    '593': '🇪🇨',
     '502': '🇬🇹',
     '503': '🇸🇻',
     '504': '🇭🇳',
@@ -81,144 +20,199 @@ const banderas = {
     '506': '🇨🇷',
     '507': '🇵🇦',
     '591': '🇧🇴',
-    '593': '🇪🇨',
     '595': '🇵🇾',
     '598': '🇺🇾',
-    '852': '🇭🇰',
-    '853': '🇲🇴',
+    '509': '🇭🇹',
+    '53': '🇨🇺',
+    '501': '🇧🇿',
+    '592': '🇬🇾',
+    '597': '🇸🇷',
+    '599': '🇨🇼',
+
+    '34': '🇪🇸',
+    '33': '🇫🇷',
+    '39': '🇮🇹',
+    '44': '🇬🇧',
+    '49': '🇩🇪',
+    '351': '🇵🇹',
+    '352': '🇱🇺',
+    '353': '🇮🇪',
+    '354': '🇮🇸',
+    '30': '🇬🇷',
+    '31': '🇳🇱',
+    '32': '🇧🇪',
+    '36': '🇭🇺',
+    '40': '🇷🇴',
+    '41': '🇨🇭',
+    '43': '🇦🇹',
+    '45': '🇩🇰',
+    '46': '🇸🇪',
+    '47': '🇳🇴',
+    '48': '🇵🇱',
+    '358': '🇫🇮',
+    '370': '🇱🇹',
+    '371': '🇱🇻',
+    '372': '🇪🇪',
+    '380': '🇺🇦',
+    '381': '🇷🇸',
+    '385': '🇭🇷',
+    '386': '🇸🇮',
+    '420': '🇨🇿',
+    '421': '🇸🇰',
+    '7': '🇷🇺',
+    '90': '🇹🇷',
+
+    '91': '🇮🇳',
+    '81': '🇯🇵',
+    '82': '🇰🇷',
+    '86': '🇨🇳',
+    '62': '🇮🇩',
+    '63': '🇵🇭',
+    '60': '🇲🇾',
+    '65': '🇸🇬',
+    '66': '🇹🇭',
+    '84': '🇻🇳',
+    '92': '🇵🇰',
+    '93': '🇦🇫',
+    '94': '🇱🇰',
+    '95': '🇲🇲',
+    '880': '🇧🇩',
     '855': '🇰🇭',
     '856': '🇱🇦',
-    '880': '🇧🇩',
-    '966': '🇸🇦',
+    '852': '🇭🇰',
+    '853': '🇲🇴',
+
     '971': '🇦🇪',
     '972': '🇮🇱',
+    '966': '🇸🇦',
     '974': '🇶🇦',
-    '992': '🇹🇯',
-    '993': '🇹🇲',
-    '994': '🇦🇿',
-    '995': '🇬🇪',
-    '996': '🇰🇬',
-    '998': '🇺🇿'
+    '98': '🇮🇷',
+    '964': '🇮🇶',
+    '962': '🇯🇴',
+    '961': '🇱🇧',
+    '963': '🇸🇾',
+    '965': '🇰🇼',
+    '968': '🇴🇲',
+    '967': '🇾🇪',
+
+    '20': '🇪🇬',
+    '27': '🇿🇦',
+    '212': '🇲🇦',
+    '213': '🇩🇿',
+    '216': '🇹🇳',
+    '218': '🇱🇾',
+    '234': '🇳🇬',
+    '233': '🇬🇭',
+    '225': '🇨🇮',
+    '221': '🇸🇳',
+    '237': '🇨🇲',
+    '254': '🇰🇪',
+    '255': '🇹🇿',
+    '256': '🇺🇬',
+    '251': '🇪🇹',
+    '258': '🇲🇿',
+    '260': '🇿🇲',
+    '263': '🇿🇼',
+
+    '61': '🇦🇺',
+    '64': '🇳🇿',
+    '679': '🇫🇯',
+    '675': '🇵🇬',
+    '685': '🇼🇸'
+  }
+
+  const numeroLimpio = String(numero).replace(/\D/g, '')
+  const ordenados = Object.keys(prefijos).sort(
+    (a, b) => b.length - a.length
+  )
+
+  for (const prefijo of ordenados) {
+    if (numeroLimpio.startsWith(prefijo)) {
+      return prefijos[prefijo]
+    }
+  }
+
+  return '🌎'
 }
 
-const obtenerNumero = participante => {
-    const ids = [
-        participante?.id,
-        participante?.jid,
-        participante?.lid
-    ]
-
-    return ids.find(id =>
-        String(id || '').endsWith('@s.whatsapp.net')
-    ) || ids.find(Boolean) || ''
-}
-
-const obtenerBandera = jid => {
-    const numero = String(jid || '').replace(/\D/g, '')
-
-    const prefijos = Object.keys(banderas)
-        .sort((a, b) => b.length - a.length)
-
-    const prefijo = prefijos.find(p => numero.startsWith(p))
-
-    return prefijo ? banderas[prefijo] : '🌐'
-}
+const handler = {}
 
 handler.run = async (sock, m) => {
-    const chat = m.key.remoteJid
+  const from = m.key.remoteJid
 
-    const reaccion = async emoji => {
-        try {
-            await sock.sendMessage(chat, {
-                react: { text: emoji, key: m.key }
-            })
-        } catch {}
-    }
-
-    const aviso = texto =>
-        sock.sendMessage(chat, { text: texto }, { quoted: m })
-
-    // Solo grupos.
-    if (!chat?.endsWith('@g.us')) {
-        await reaccion('❌')
-        return aviso('> 🐸 Este comando solo funciona en grupos.')
-    }
-
-    // Obtener participantes.
-    let metadata
-
-    try {
-        metadata = await sock.groupMetadata(chat)
-    } catch {
-        await reaccion('❌')
-        return aviso('> ❌ No pude obtener los participantes del grupo.')
-    }
-
+  try {
+    const metadata = await sock.groupMetadata(from)
     const participantes = metadata.participants || []
 
-    // Validar administrador.
-    const idsEjecutor = [
-        m.key?.participant,
-        m.key?.participantAlt,
-        m.participant,
-        m.sender,
-        m.senderLid
+    // Verificar administrador
+    const normalizar = jid => limpiarJid(jid || '')
+
+    const identificadores = [
+      m.key.participant,
+      m.key.participantAlt,
+      m.participant,
+      m.sender,
+      m.senderLid
     ].filter(Boolean).map(normalizar)
 
-    const adminEjecutor = participantes.find(p => {
-        const ids = [p.id, p.jid, p.lid]
-            .filter(Boolean)
-            .map(normalizar)
+    const participante = participantes.find(p => {
+      const ids = [
+        p.id,
+        p.jid,
+        p.lid
+      ].filter(Boolean).map(normalizar)
 
-        return ids.some(id => idsEjecutor.includes(id))
+      return ids.some(id => identificadores.includes(id))
     })
 
-    if (!esAdmin(adminEjecutor)) {
-        await reaccion('🚫')
-        return aviso('> 🚫 Solo los administradores pueden usar .todos.')
+    if (!participante?.admin) {
+      return sock.sendMessage(from, {
+        text: '→ ⚠️ *Este comando solo puede ser usado por administradores.*'
+      }, { quoted: m })
     }
 
-    if (!participantes.length) {
-        await reaccion('⚠️')
-        return aviso('> ⚠️ No encontré miembros en este grupo.')
+    const mentions = []
+    let lista = ''
+    let contador = 0
+
+    for (const p of participantes) {
+      const jid = limpiarJid(p.jid || p.id)
+
+      if (!jid) continue
+
+      const numero = jid.split('@')[0]
+      const bandera = obtenerBandera(numero)
+
+      contador++
+      mentions.push(jid)
+
+      lista += `┆ ${contador}. ${bandera} @${numero}\n`
     }
 
-    await reaccion('📢')
+    const mensaje =
+`─── ⋆⋅☆⋅⋆ ──
+       ✦ 𝐓𝐎𝐃𝐎𝐒 ✦
+─── ⋆⋅☆⋅⋆ ──
 
-    const nombreGrupo = metadata.subject || 'Grupo'
-    const total = participantes.length
+→ *Grupo:* ${metadata.subject || 'Grupo'}
+→ *Miembros:* ${participantes.length}
 
-    // Crear lista completa.
-    const lista = participantes.map((p, index) => {
-        const jid = obtenerNumero(p)
-        const numero = String(jid).split('@')[0]
-        const bandera = obtenerBandera(jid)
+${lista}
+─── ⋆⋅☆⋅⋆ ──
+→ 𝐏𝐄𝐏𝐄 𝐁𝐎𝐓 🐸`
 
-        return {
-            jid: p.id,
-            texto: `> ${String(index + 1).padStart(2, '0')}. ${bandera} @${numero}`
-        }
-    }).filter(p => p.jid)
+    await sock.sendMessage(from, {
+      text: mensaje,
+      mentions
+    }, { quoted: m })
 
-    // Un solo mensaje con todos los participantes.
-    let texto =
-        `╭━━〔 🐸 *PEPE BOT* 〕━━╮\n` +
-        `┃ 🏷️ *${nombreGrupo}*\n` +
-        `┃ 👥 *Miembros:* ${total}\n` +
-        `╰━━━━━━━━━━━━━━╯\n\n` +
-        `> 📢 *LISTA DE MIEMBROS*\n\n`
+  } catch (error) {
+    console.error('[TODOS]', error)
 
-    texto += lista.map(p => p.texto).join('\n')
-    texto += '\n\n> 🐸 *PEPE BOT — TODOS*'
-
-    try {
-        await sock.sendMessage(chat, {
-            text: texto,
-            mentions: lista.map(p => p.jid)
-        })
-    } catch {
-        await aviso('> ❌ No se pudo enviar la lista completa.')
-    }
+    await sock.sendMessage(from, {
+      text: '→ ❌ No pude obtener la lista de participantes.'
+    }, { quoted: m })
+  }
 }
 
 handler.command = ['todos', 'tagall']
