@@ -13,6 +13,7 @@
     "axios": "^1.7.9",
     "chalk": "^5.4.1",
     "jimp": "^1.6.0",
+    "baileys-buttons": "latest"
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   }
