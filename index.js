@@ -611,16 +611,27 @@ async function executePlugin(plugin, m, parsed, sock) {
         logger
     }
 
+    // Ejecutar la función especial para seleccionar una voz TTS
+    if (
+        parsed.command === 'ttsvoice' &&
+        typeof handler.voice === 'function'
+    ) {
+        return await handler.voice(sock, m, parsed.args, context)
+    }
+
+    // Ejecutar plugins normalmente
     if (typeof handler.run === 'function') {
-        return handler.run(sock, m, parsed.args, context)
+        return await handler.run(sock, m, parsed.args, context)
     }
 
+    // Ejecutar handlers que sean funciones
     if (typeof handler === 'function') {
-        return handler(m, context)
+        return await handler(m, context)
     }
 
-    if (typeof module.handler === 'function') {
-        return module.handler(m, context)
+    // Ejecutar handler alternativo del módulo
+    if (typeof module?.handler === 'function') {
+        return await module.handler(m, context)
     }
 }
 
