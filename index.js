@@ -29,6 +29,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 // 💤 SISTEMA AFK
 // ══════════════════════════════════════
 
+
 const afkPath = path.join(BASE_DIR, 'database', 'afk.json')
 
 function leerAFK() {
@@ -43,44 +44,57 @@ function leerAFK() {
     }
 }
 
+function guardarAFK(db) {
+    fs.mkdirSync(path.dirname(afkPath), { recursive: true })
+    fs.writeFileSync(afkPath, JSON.stringify(db, null, 2))
+}
+
 function limpiarJid(jid = '') {
     return String(jid).replace(/:\d+@/, '@').trim()
 }
 
 function numeroDeJid(jid = '') {
-    return limpiarJid(jid)
-        .replace(/@.+$/, '')
-        .replace(/\D/g, '')
+    return limpiarJid(jid).replace(/@.+$/, '').replace(/\D/g, '')
 }
 
-function obtenerMenciones(message) {
-    const msg = unwrapMessage(message)
-    const tipos = [
-        msg.extendedTextMessage,
-        msg.imageMessage,
-        msg.videoMessage,
-        msg.documentMessage,
-        msg.audioMessage,
-        msg.stickerMessage
-    ].filter(Boolean)
+function buscarAFK(grupoAFK, jid) {
+    const limpio = limpiarJid(jid)
+    const numero = numeroDeJid(limpio)
 
-    const mencionados = []
+    if (grupoAFK[limpio]) return limpio
 
-    for (const tipo of tipos) {
-        const lista = tipo.contextInfo?.mentionedJid || []
-        mencionados.push(...lista)
-    }
+    return Object.keys(grupoAFK).find(clave => {
+        const registro = grupoAFK[clave]
 
-    return [...new Set(mencionados.map(limpiarJid).filter(Boolean))]
+        return numeroDeJid(clave) === numero ||
+            (
+                registro?.numero &&
+                String(registro.numero).replace(/\D/g, '') === numero
+            )
+    })
 }
 
 async function detectarMencionesAFK(sock, message) {
     const from = message.key.remoteJid
-
     if (!from?.endsWith('@g.us')) return
-    if (message.key.fromMe) return
 
-    const mencionados = obtenerMenciones(message.message)
+    const msg = unwrapMessage(message.message)
+
+    const tipos = [
+        msg.extendedTextMessage,
+        msg.imageMessage,
+        msg.videoMessage,
+        msg.documentMessage
+    ].filter(Boolean)
+
+    const mencionados = [
+        ...new Set(
+            tipos.flatMap(tipo => tipo.contextInfo?.mentionedJid || [])
+                .map(limpiarJid)
+                .filter(Boolean)
+        )
+    ]
+
     if (!mencionados.length) return
 
     const db = leerAFK()
@@ -88,44 +102,45 @@ async function detectarMencionesAFK(sock, message) {
 
     if (!Object.keys(grupoAFK).length) return
 
+    let metadata
+
+    try {
+        metadata = await sock.groupMetadata(from)
+    } catch {
+        return
+    }
+
     const avisos = []
     const vistos = new Set()
 
     for (const mencionado of mencionados) {
-        const jid = limpiarJid(mencionado)
-        const numero = numeroDeJid(jid)
+        const clave = buscarAFK(grupoAFK, mencionado)
+        if (!clave || vistos.has(clave)) continue
 
-        let registro = grupoAFK[jid]
-
-        // Compatibilidad entre JID normal y LID.
-        if (!registro && numero) {
-            registro = Object.values(grupoAFK).find(usuario =>
-                usuario?.numero &&
-                String(usuario.numero).replace(/\D/g, '') === numero
-            )
-        }
-
-        if (!registro) continue
-
-        const clave = registro.numero || jid
-
-        if (vistos.has(clave)) continue
         vistos.add(clave)
 
+        const registro = grupoAFK[clave]
+        const numero = registro.numero || numeroDeJid(clave)
+
+        const participante = metadata.participants.find(p => {
+            const ids = [p.id, p.jid, p.lid].filter(Boolean)
+
+            return ids.some(id =>
+                limpiarJid(id) === mencionado ||
+                numeroDeJid(id) === numero
+            )
+        })
+
+        const jidReal = participante?.id || mencionado
+
         avisos.push({
-            numero: registro.numero || numero || 'Desconocido',
+            jid: jidReal,
+            numero,
             razon: registro.razon || 'Sin razón especificada'
         })
     }
 
     if (!avisos.length) return
-
-    let nombreGrupo = 'Grupo'
-
-    try {
-        const metadata = await sock.groupMetadata(from)
-        nombreGrupo = metadata.subject || 'Grupo'
-    } catch {}
 
     const texto = avisos.map(usuario =>
 `╭─── ⋆⋅☆⋅⋆ ───╮
@@ -138,12 +153,72 @@ async function detectarMencionesAFK(sock, message) {
     ).join('\n\n')
 
     await sock.sendMessage(from, {
-        text: `${texto}
-
-─── ⋆⋅☆⋅⋆ ──
-> 🌿 ${nombreGrupo}`
+        text: texto,
+        mentions: avisos.map(usuario => usuario.jid)
     }, { quoted: message })
 }
+
+async function detectarRegresoAFK(sock, message) {
+    const from = message.key.remoteJid
+
+    if (!from?.endsWith('@g.us')) return
+    if (message.key.fromMe) return
+
+    const sender =
+        message.key.participant ||
+        message.key.participantAlt
+
+    if (!sender) return
+
+    const db = leerAFK()
+    const grupoAFK = db[from] || {}
+
+    const clave = buscarAFK(grupoAFK, sender)
+    if (!clave) return
+
+    const registro = grupoAFK[clave]
+    const numero = registro.numero || numeroDeJid(sender)
+
+    delete grupoAFK[clave]
+
+    if (Object.keys(grupoAFK).length) {
+        db[from] = grupoAFK
+    } else {
+        delete db[from]
+    }
+
+    guardarAFK(db)
+
+    let metadata
+
+    try {
+        metadata = await sock.groupMetadata(from)
+    } catch {
+        metadata = { subject: 'Grupo' }
+    }
+
+    const participante = metadata.participants?.find(p => {
+        const ids = [p.id, p.jid, p.lid].filter(Boolean)
+        return ids.some(id =>
+            limpiarJid(id) === limpiarJid(sender) ||
+            numeroDeJid(id) === numero
+        )
+    })
+
+    const jidReal = participante?.id || sender
+
+    await sock.sendMessage(from, {
+        text:
+`╭─── ⋆⋅☆⋅⋆ ───╮
+       🌿 𝐀𝐅𝐊 𝐅𝐈𝐍𝐀𝐋𝐈𝐙𝐀𝐃𝐎
+╰─── ⋆⋅☆⋅⋆ ───╯
+
+> 🐸 @${numero}
+> ✅ Ha regresado y ya no está AFK.`,
+        mentions: [jidReal]
+    }, { quoted: message })
+}
+
 
 // ══════════════════════════════════════
 // 📂 CARGAR PLUGINS
