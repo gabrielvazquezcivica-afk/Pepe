@@ -134,7 +134,7 @@ handler.run = async (sock, m, args) => {
         )
 
         return sock.sendMessage(chat, {
-            text: `╭─「 🔒 MODO ADMIN 」\n│\n│  Activado en:\n│  ${nombreGrupo}\n│\n╰────────────`
+            text: `> MODO ADMIN ACTIVADO`
         }, { quoted })
     }
 
@@ -153,7 +153,7 @@ handler.run = async (sock, m, args) => {
         )
 
         return sock.sendMessage(chat, {
-            text: `╭─「 🔓 MODO ADMIN 」\n│\n│  Desactivado en:\n│  ${nombreGrupo}\n│\n╰────────────`
+            text: `> MODO ADMIN DESACTIVO`
         }, { quoted })
     }
 
