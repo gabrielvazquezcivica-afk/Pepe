@@ -51,16 +51,10 @@ async function reaccionar(sock, m, emoji) {
 
 handler.run = async (sock, m, args, context) => {
     const chat = m.key.remoteJid
-    const accion = String(m.command || args?.[0] || '').toLowerCase()
+    const accion = String(m.command || '').toLowerCase()
 
     if (!chat?.endsWith('@g.us')) {
         return m.reply('> ❌ Este comando solamente funciona en grupos.')
-    }
-
-    const objetivo = obtenerObjetivo(m)
-
-    if (!objetivo) {
-        return m.reply('> ⚠️ Menciona a un usuario o responde a su mensaje.')
     }
 
     let metadata
@@ -73,6 +67,7 @@ handler.run = async (sock, m, args, context) => {
 
     const participantes = metadata.participants || []
 
+    // Verificar administrador que ejecuta el comando
     const idsEjecutor = [
         m.key?.participant,
         m.key?.participantAlt,
@@ -87,6 +82,7 @@ handler.run = async (sock, m, args, context) => {
         return m.reply('> 🚫 Solamente los administradores pueden usar este comando.')
     }
 
+    // Verificar que Pepe Bot sea administrador
     const botId = sock.user?.id || ''
     const botNumero = botId.split(':')[0].split('@')[0]
 
@@ -100,6 +96,13 @@ handler.run = async (sock, m, args, context) => {
 
     if (!esAdmin(botInfo)) {
         return m.reply('> ⚠️ Pepe Bot necesita ser administrador del grupo.')
+    }
+
+    // Obtener usuario mencionado o respondido
+    const objetivo = obtenerObjetivo(m)
+
+    if (!objetivo) {
+        return m.reply('> ⚠️ Menciona a un usuario o responde a su mensaje.')
     }
 
     const participanteObjetivo = buscar(participantes, [objetivo])
@@ -122,13 +125,15 @@ handler.run = async (sock, m, args, context) => {
         return
     }
 
-    const jidAdmin =
-        adminEjecutor.id ||
-        m.key?.participant ||
-        m.sender
+    const jidAdmin = adminEjecutor.id || m.sender
 
-    const numeroObjetivo = String(jidObjetivo).split('@')[0].split(':')[0]
-    const numeroAdmin = String(jidAdmin).split('@')[0].split(':')[0]
+    const numeroObjetivo = String(jidObjetivo)
+        .split('@')[0]
+        .split(':')[0]
+
+    const numeroAdmin = String(jidAdmin)
+        .split('@')[0]
+        .split(':')[0]
 
     await reaccionar(sock, m, '⏳')
 
@@ -141,9 +146,7 @@ handler.run = async (sock, m, args, context) => {
 
         await reaccionar(sock, m, '✅')
 
-        const promovido = accion === 'promote'
-
-        const texto = promovido
+        const texto = accion === 'promote'
             ? `> 👑 @${numeroObjetivo} ahora es administrador.\n> 🛡️ Acción realizada por @${numeroAdmin}.`
             : `> 🔻 @${numeroObjetivo} ya no es administrador.\n> 🛡️ Acción realizada por @${numeroAdmin}.`
 
