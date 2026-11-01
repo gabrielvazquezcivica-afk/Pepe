@@ -1,4 +1,6 @@
 
+import { sendButtons } from 'baileys-buttons'
+
 const handler = {}
 
 const normalizar = jid =>
@@ -11,9 +13,11 @@ const buscar = (participantes, identificadores = []) => {
     const ids = identificadores.filter(Boolean).map(normalizar)
 
     return participantes.find(p => {
-        const idsParticipante = [p.id, p.jid, p.lid]
-            .filter(Boolean)
-            .map(normalizar)
+        const idsParticipante = [
+            p.id,
+            p.jid,
+            p.lid
+        ].filter(Boolean).map(normalizar)
 
         return idsParticipante.some(id => ids.includes(id))
     })
@@ -70,14 +74,39 @@ handler.run = async (sock, m) => {
 
         const enlace = `https://chat.whatsapp.com/${codigo}`
 
-        await m.reply(
-            `╭─「 🔗 ENLACE DEL GRUPO 」\n│\n` +
-            `│ 📌 ${metadata.subject || 'Grupo'}\n` +
-            `│\n│ ${enlace}\n│\n` +
-            `╰────────────`
-        )
+        let imagen = null
+
+        try {
+            const fotoUrl = await sock.profilePictureUrl(chat, 'image')
+            const respuesta = await fetch(fotoUrl)
+
+            if (respuesta.ok) {
+                imagen = Buffer.from(await respuesta.arrayBuffer())
+            }
+        } catch {}
+
+        const botones = [
+            {
+                name: 'cta_url',
+                buttonParamsJson: JSON.stringify({
+                    display_text: 'Ver grupo',
+                    url: enlace,
+                    merchant_url: enlace
+                })
+            }
+        ]
+
+        await sendButtons(sock, chat, {
+            title: metadata.subject || 'Grupo',
+            text: `🔗 Enlace de invitación\n\n${enlace}`,
+            footer: '🐸 PEPE BOT',
+            image: imagen,
+            buttons: botones,
+            quoted: m
+        })
+
     } catch {
-        return m.reply('> ❌ No pude generar el enlace de invitación.')
+        await m.reply('> ❌ No pude generar la tarjeta de invitación.')
     }
 }
 
