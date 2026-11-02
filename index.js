@@ -804,8 +804,8 @@ async function processMessage(message, sock) {
 async function attachSocket(sock) {
     activeSock = sock
 
-await revisarCierres(sock)
-iniciarRevisionCierres(() => activeSock)
+    await revisarCierres(sock)
+    iniciarRevisionCierres(() => activeSock)
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
         if (sock !== activeSock || type !== 'notify') return
