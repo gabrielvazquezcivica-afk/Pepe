@@ -899,6 +899,7 @@ async function start() {
     await loadPlugins()
 
     const sock = await connect()
+    instalarBienvenidas(sock)
     await attachSocket(sock)
 
     console.log(chalk.green('✅ PEPE BOT está listo.'))
