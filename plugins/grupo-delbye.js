@@ -5,7 +5,6 @@ const DB_FILE = path.resolve('./database/bienvenidas.json')
 
 function cargarDB() {
   try {
-    if (!fs.existsSync(DB_FILE)) return {}
     return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
   } catch {
     return {}
@@ -17,25 +16,29 @@ function guardarDB(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
 }
 
+async function esAdmin(sock, chat, sender) {
+  const metadata = await sock.groupMetadata(chat)
+  const normalizar = jid => String(jid || '').replace(/:\d+@/, '@')
+  const participante = metadata.participants.find(p =>
+    [p.id, p.jid, p.lid].filter(Boolean).some(id => normalizar(id) === normalizar(sender))
+  )
+  return ['admin', 'superadmin'].includes(participante?.admin)
+}
+
 const handler = {}
 
 handler.run = async (sock, m) => {
-  if (!m.isGroup) {
-    return m.reply('❌ Este comando solo funciona en grupos.')
+  if (!m.isGroup) return m.reply('> ❌ Este comando solo funciona en grupos.')
+  if (!(await esAdmin(sock, m.chat, m.sender))) {
+    return m.reply('> ⛔ Solo los administradores pueden usar este comando.')
   }
 
   const db = cargarDB()
-
-  if (!db[m.chat]) db[m.chat] = {}
-
-  if (!db[m.chat].byeMessage) {
-    return m.reply('⚠️ Este grupo no tiene un mensaje de despedida personalizado.')
-  }
-
+  db[m.chat] ??= {}
   delete db[m.chat].byeMessage
   guardarDB(db)
 
-  await m.reply('✅ Se eliminó el mensaje personalizado de despedida. Se utilizará el mensaje predeterminado de Pepe Bot.')
+  return m.reply('> ✅ Mensaje personalizado eliminado. Se usará la despedida predeterminada.')
 }
 
 handler.command = ['delbye']
