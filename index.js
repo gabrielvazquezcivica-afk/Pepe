@@ -741,6 +741,8 @@ async function processMessage(message, sock) {
     const chat = message.key.remoteJid
     if (chat === 'status@broadcast') return
 
+    registrarActividad(message)
+
     // Revisar si el usuario está muteado
     if (await revisarMuteado(sock, message)) return
 
