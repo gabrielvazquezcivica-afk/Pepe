@@ -1,17 +1,27 @@
-
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const handler = {}
-
-const DB_DIR = './database'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DB_DIR = path.resolve(__dirname, '../database')
 const DB_FILE = path.join(DB_DIR, 'cierres.json')
+
+const cargarDB = () => {
+    try {
+        if (!fs.existsSync(DB_FILE)) return {}
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
+    } catch {
+        return {}
+    }
+}
+
+const guardarDB = db => {
+    fs.mkdirSync(DB_DIR, { recursive: true })
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+}
 
 const normalizar = jid =>
     String(jid || '').replace(/:\d+@/, '@').trim()
-
-const esAdmin = participante =>
-    ['admin', 'superadmin'].includes(participante?.admin)
 
 const buscar = (participantes, identificadores = []) => {
     const ids = identificadores.filter(Boolean).map(normalizar)
@@ -25,27 +35,8 @@ const buscar = (participantes, identificadores = []) => {
     })
 }
 
-function cargarDB() {
-    try {
-        fs.mkdirSync(DB_DIR, { recursive: true })
-
-        if (!fs.existsSync(DB_FILE)) {
-            fs.writeFileSync(DB_FILE, '{}')
-        }
-
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
-    } catch {
-        return {}
-    }
-}
-
-function guardarDB(db) {
-    fs.mkdirSync(DB_DIR, { recursive: true })
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
-}
-
-function convertirTiempo(valor) {
-    const coincidencia = String(valor || '').match(/^(\d+)(s|m|h)$/i)
+const convertirTiempo = texto => {
+    const coincidencia = String(texto || '').match(/^(\d+)(s|m|h)$/i)
 
     if (!coincidencia) return null
 
@@ -60,138 +51,93 @@ function convertirTiempo(valor) {
         h: 60 * 60 * 1000
     }
 
-    const tiempo = cantidad * multiplicador[unidad]
-
-    if (!Number.isSafeInteger(tiempo)) return null
-
-    return tiempo
+    return cantidad * multiplicador[unidad]
 }
 
-async function reaccionar(sock, m, emoji) {
-    try {
-        await sock.sendMessage(m.chat, {
-            react: {
-                text: emoji,
-                key: m.key
-            }
-        })
-    } catch {}
+const mostrarTiempo = milisegundos => {
+    const segundos = Math.ceil(milisegundos / 1000)
+
+    if (segundos < 60) return `${segundos} segundos`
+
+    const minutos = Math.ceil(segundos / 60)
+
+    if (minutos < 60) return `${minutos} minutos`
+
+    const horas = Math.ceil(minutos / 60)
+    return `${horas} horas`
 }
+
+const handler = {}
 
 handler.run = async (sock, m, args) => {
-    const chat = m.key.remoteJid
-    const accion = String(m.command || '').toLowerCase()
+    const chat = m.chat
 
-    if (!chat?.endsWith('@g.us')) {
-        return m.reply('> ❌ Este comando solamente funciona en grupos.')
+    if (!m.isGroup) {
+        return m.reply('> Este comando solo funciona en grupos.')
     }
 
-    let metadata
+    const duracion = convertirTiempo(args[0])
 
-    try {
-        metadata = await sock.groupMetadata(chat)
-    } catch {
-        return m.reply('> ❌ No pude obtener la información del grupo.')
+    if (!duracion) {
+        return m.reply(
+            '> Uso correcto:\n' +
+            '> .cerrartemporal 30s\n' +
+            '> .cerrartemporal 10m\n' +
+            '> .cerrartemporal 2h'
+        )
     }
 
+    const metadata = await sock.groupMetadata(chat)
     const participantes = metadata.participants || []
 
-    const adminEjecutor = buscar(participantes, [
+    const usuario = buscar(participantes, [
         m.key?.participant,
         m.key?.participantAlt,
-        m.participant,
         m.sender,
         m.senderLid
     ])
 
-    if (!esAdmin(adminEjecutor)) {
-        return m.reply('> 🚫 Solamente los administradores pueden usar este comando.')
+    if (!['admin', 'superadmin'].includes(usuario?.admin)) {
+        return m.reply('> Solo los administradores pueden usar este comando.')
     }
 
     const botId = sock.user?.id || ''
     const botNumero = botId.split(':')[0].split('@')[0]
 
-    const botInfo = buscar(participantes, [
+    const bot = buscar(participantes, [
         botId,
         sock.user?.lid,
         `${botNumero}@s.whatsapp.net`
     ])
 
-    if (!esAdmin(botInfo)) {
-        return m.reply('> ⚠️ Pepe Bot necesita ser administrador del grupo.')
+    if (!['admin', 'superadmin'].includes(bot?.admin)) {
+        return m.reply('> Necesito ser administrador para cerrar el grupo.')
     }
-
-    const db = cargarDB()
-
-    if (['open', 'abrir'].includes(accion)) {
-        await reaccionar(sock, m, '⏳')
-
-        try {
-            await sock.groupSettingUpdate(chat, 'not_announcement')
-
-            delete db[chat]
-            guardarDB(db)
-
-            await reaccionar(sock, m, '✅')
-
-            return m.reply('> 🔓 Grupo abierto. Temporizador cancelado.')
-        } catch {
-            await reaccionar(sock, m, '❌')
-            return m.reply('> ❌ No pude abrir el grupo.')
-        }
-    }
-
-    if (!['close', 'cerrar'].includes(accion)) return
-
-    const duracion = convertirTiempo(args[0])
-
-    if (args.length && !duracion) {
-        return m.reply('> ⚠️ Tiempo inválido. Usa: 30s, 10m o 2h.')
-    }
-
-    await reaccionar(sock, m, '⏳')
 
     try {
         await sock.groupSettingUpdate(chat, 'announcement')
 
-        if (duracion) {
-            db[chat] = {
-                abrirEn: Date.now() + duracion
-            }
+        const db = cargarDB()
 
-            guardarDB(db)
-        } else {
-            delete db[chat]
-            guardarDB(db)
+        db[chat] = {
+            abrirEn: Date.now() + duracion
         }
 
-        await reaccionar(sock, m, '✅')
+        guardarDB(db)
 
-        const numeroAdmin = String(
-            adminEjecutor.id || m.sender
-        ).split('@')[0].split(':')[0]
-
-        const tiempoTexto = duracion
-            ? `\n> ⏱️ Se abrirá automáticamente en ${args[0]}.`
-            : '\n> 🔒 Permanecerá cerrado hasta que un administrador lo abra.'
-
-        return sock.sendMessage(chat, {
-            text: `> 🔒 Grupo cerrado correctamente.${tiempoTexto}\n> 🛡️ Acción realizada por @${numeroAdmin}.`,
-            mentions: [adminEjecutor.id || m.sender]
-        }, { quoted: m })
-
+        return m.reply(
+            `> 🔒 Grupo cerrado temporalmente.\n\n` +
+            `> ⏱️ Tiempo: ${mostrarTiempo(duracion)}\n` +
+            `> 🔓 Se abrirá automáticamente al terminar el tiempo.`
+        )
     } catch {
-        await reaccionar(sock, m, '❌')
-        return m.reply('> ❌ No pude cerrar el grupo.')
+        return m.reply('> No pude cerrar el grupo.')
     }
 }
 
-handler.command = ['cerrar', 'abrir']
-handler.help = ['cerrar <tiempo>']
+handler.command = ['cerrartemporal']
+handler.help = ['cerrartemporal']
 handler.tags = ['grupo']
 handler.menu = true
-handler.group = true
-handler.admin = true
-handler.botAdmin = true
 
 export default handler
