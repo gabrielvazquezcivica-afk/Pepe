@@ -1,3 +1,4 @@
+
 import fs from 'fs'
 import path from 'path'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
@@ -22,21 +23,54 @@ async function esAdmin(sock, chat, sender, m) {
   const metadata = await sock.groupMetadata(chat)
   const normalizar = jid => String(jid || '').replace(/:\d+@/, '@')
 
-  const ids = [sender, m.senderLid, m.key?.participantAlt].filter(Boolean)
-    .map(normalizar)
+  const ids = [
+    sender,
+    m.senderLid,
+    m.key?.participantAlt,
+    m.key?.participant
+  ].filter(Boolean).map(normalizar)
 
   const participante = metadata.participants.find(p =>
-    [p.id, p.jid, p.lid].filter(Boolean)
+    [p.id, p.jid, p.lid]
+      .filter(Boolean)
       .some(id => ids.includes(normalizar(id)))
   )
 
   return ['admin', 'superadmin'].includes(participante?.admin)
 }
 
+// Obtener el mensaje original y comprobar que contiene audio
+function obtenerMensajeCitado(citado) {
+  if (!citado) return null
+
+  const original = citado.fakeObj || citado
+  let mensaje = original.message || {}
+
+  while (
+    mensaje.ephemeralMessage ||
+    mensaje.viewOnceMessage ||
+    mensaje.viewOnceMessageV2 ||
+    mensaje.viewOnceMessageV2Extension
+  ) {
+    mensaje =
+      mensaje.ephemeralMessage?.message ||
+      mensaje.viewOnceMessage?.message ||
+      mensaje.viewOnceMessageV2?.message ||
+      mensaje.viewOnceMessageV2Extension?.message ||
+      mensaje
+  }
+
+  if (!mensaje.audioMessage) return null
+
+  return original
+}
+
 const handler = {}
 
 handler.run = async (sock, m, args) => {
-  if (!m.isGroup) return m.reply('> ❌ Este comando solo funciona en grupos.')
+  if (!m.isGroup) {
+    return m.reply('> ❌ Este comando solo funciona en grupos.')
+  }
 
   if (!(await esAdmin(sock, m.chat, m.sender, m))) {
     return m.reply('> ⛔ Solo los administradores pueden usar este comando.')
@@ -45,15 +79,20 @@ handler.run = async (sock, m, args) => {
   const db = cargarDB()
   db[m.chat] ??= {}
 
+  // Opción 1: guardar una URL
   const url = args.join(' ').trim()
 
   if (url) {
     try {
       const enlace = new URL(url)
-      if (!['http:', 'https:'].includes(enlace.protocol)) throw new Error()
+
+      if (!['http:', 'https:'].includes(enlace.protocol)) {
+        throw new Error('Protocolo inválido')
+      }
 
       db[m.chat].byeAudio = url
       delete db[m.chat].byeAudioFile
+
       guardarDB(db)
 
       return m.reply('> ✅ Audio de despedida guardado correctamente.')
@@ -62,29 +101,38 @@ handler.run = async (sock, m, args) => {
     }
   }
 
+  // Opción 2: guardar un audio respondido
   const citado = m.quoted
+
   if (!citado) {
-    return m.reply('> ⚙️ Responde a un audio con .setbyeaudio o proporciona una URL.')
+    return m.reply(
+      '> ⚙️ Responde directamente a un audio con .setbyeaudio\n' +
+      '> También puedes proporcionar una URL.'
+    )
   }
 
-  const mensaje = citado.message || {}
-  const contenido = mensaje.ephemeralMessage?.message || mensaje
+  const original = obtenerMensajeCitado(citado)
 
-  if (!contenido.audioMessage) {
-    return m.reply('> ❌ Debes responder a un mensaje de audio.')
+  if (!original) {
+    return m.reply('> ❌ El mensaje citado no contiene un audio válido.')
   }
 
   try {
     fs.mkdirSync(AUDIO_DIR, { recursive: true })
 
     const buffer = await downloadMediaMessage(
-      citado,
+      original,
       'buffer',
       {},
-      { logger: console, reuploadRequest: sock.updateMediaMessage }
+      {
+        logger: console,
+        reuploadRequest: sock.updateMediaMessage
+      }
     )
 
-    if (!buffer?.length) throw new Error('Audio vacío')
+    if (!buffer?.length) {
+      throw new Error('Audio vacío')
+    }
 
     const archivo = path.join(
       AUDIO_DIR,
@@ -95,12 +143,17 @@ handler.run = async (sock, m, args) => {
 
     db[m.chat].byeAudioFile = archivo
     delete db[m.chat].byeAudio
+
     guardarDB(db)
 
     return m.reply('> ✅ Audio de despedida guardado correctamente.')
   } catch (error) {
-    console.error(error)
-    return m.reply('> ❌ No se pudo guardar el audio.')
+    console.error('Error guardando audio de despedida:', error)
+
+    return m.reply(
+      '> ❌ No se pudo descargar el audio.\n' +
+      '> Intenta responder nuevamente al audio original.'
+    )
   }
 }
 
