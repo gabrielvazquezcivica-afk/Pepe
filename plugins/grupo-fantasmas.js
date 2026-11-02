@@ -1,3 +1,4 @@
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
@@ -32,7 +33,7 @@ const buscar = (participantes, identificadores = []) => {
     })
 }
 
-async function obtenerPermisos(sock, m, metadata) {
+async function comprobarPermisos(sock, m, metadata) {
     const participantes = metadata.participants || []
 
     const usuario = buscar(participantes, [
@@ -103,59 +104,65 @@ function obtenerFantasmas(chat, participantes) {
 
 const handler = {}
 
-handler.run = async (sock, m, args) => {
-    const chat = m.chat
+handler.run = async (sock, m, args = []) => {
+    const chat = m.chat || m.key?.remoteJid
+    const comando = String(m.command || '').toLowerCase()
 
     if (!m.isGroup) {
         return m.reply('> Este comando solo funciona en grupos.')
     }
 
-    const comando = m.command
-
     try {
         const metadata = await sock.groupMetadata(chat)
-        const permisos = await obtenerPermisos(sock, m, metadata)
+        const permisos = await comprobarPermisos(sock, m, metadata)
 
-        if (permisos.error) return m.reply(`> ${permisos.error}`)
+        if (permisos.error) {
+            return m.reply(`> ${permisos.error}`)
+        }
 
         const fantasmas = obtenerFantasmas(chat, permisos.participantes)
 
-        if (comando === 'fantasmas') {
-            if (!fantasmas.length) {
-                return m.reply('> 🐸 No encontré integrantes que cumplan los criterios.')
-            }
+        if (!fantasmas.length) {
+            return m.reply('> 🐸 No encontré integrantes que cumplan los criterios.')
+        }
 
-            const lista = fantasmas.slice(0, 40).map((p, i) => {
+        if (comando === 'fantasmas') {
+            const listaFantasmas = fantasmas.slice(0, 40)
+            const menciones = listaFantasmas.map(p => p.jid)
+
+            const lista = listaFantasmas.map((p, i) => {
                 const razones = []
 
                 if (p.pocosMensajes) {
-                    razones.push(`Menos de ${MENSAJES_MINIMOS} mensajes`)
+                    razones.push('Menos de 10 mensajes')
                 }
 
                 if (p.inactivo) {
-                    razones.push(`Inactivo ${DIAS_INACTIVIDAD} días o más`)
+                    razones.push('Inactivo 30 días o más')
                 }
 
-                return `${i + 1}. @${p.jid.split('@')[0]}\n   Mensajes: ${p.mensajes}\n   Motivo: ${razones.join(' y ')}`
+                return `${i + 1}. @${p.jid.split('@')[0]}
+   Mensajes: ${p.mensajes}
+   Motivo: ${razones.join(' y ')}`
             }).join('\n\n')
 
-            const texto =
-                `👻 *REPORTE DE FANTASMAS*\n\n` +
-                `Integrantes detectados: ${fantasmas.length}\n\n` +
-                `${lista}\n\n` +
-                `⚠️ Las estadísticas empiezan desde que se instaló el registro.`
+            await sock.sendMessage(chat, {
+                text:
+                    `👻 *REPORTE DE FANTASMAS*\n\n` +
+                    `Detectados: ${fantasmas.length}\n\n` +
+                    `${lista}\n\n` +
+                    `⚠️ Registro desde la instalación del sistema.`,
+                mentions: menciones
+            }, { quoted: m })
 
             return sendButtons(sock, chat, {
                 title: '🐸 PEPE BOT',
-                text: texto,
-                footer: 'Sistema de actividad',
+                text: '¿Qué deseas hacer con los integrantes detectados?',
+                footer: 'PEPE BOT • Fantasmas',
                 buttons: [
                     {
-                        name: 'quick_reply',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: 'Ejecutar kickfan',
-                            id: '.kickfan'
-                        })
+                        id: '.kickfan',
+                        displayText: '👻 Ejecutar kickfan'
                     }
                 ],
                 quoted: m
@@ -163,26 +170,34 @@ handler.run = async (sock, m, args) => {
         }
 
         if (comando === 'kickfan') {
-            if (!fantasmas.length) {
-                return m.reply('> 🐸 No hay integrantes que cumplan los criterios.')
-            }
-
             const confirmacion = await m.reply(
-                `> ⚠️ Se encontraron ${fantasmas.length} integrantes.\n` +
-                `> Se expulsará a los integrantes detectados que no sean administradores.\n` +
-                `> Ejecutando expulsión...`
+                `> ⚠️ Se encontraron ${fantasmas.length} integrantes que cumplen los criterios.\n` +
+                `> Se excluirán los administradores y el bot.\n` +
+                `> Iniciando expulsiones...`
             )
 
             let expulsados = 0
             let errores = 0
 
             for (const fantasma of fantasmas) {
+                const participante = buscar(
+                    permisos.participantes,
+                    [fantasma.jid]
+                )
+
+                if (!participante) continue
+
+                if (['admin', 'superadmin'].includes(participante.admin)) {
+                    continue
+                }
+
                 try {
                     await sock.groupParticipantsUpdate(
                         chat,
                         [fantasma.jid],
                         'remove'
                     )
+
                     expulsados++
                 } catch {
                     errores++
@@ -192,10 +207,11 @@ handler.run = async (sock, m, args) => {
             return m.reply(
                 `> 👻 *KICKFAN FINALIZADO*\n\n` +
                 `> Expulsados: ${expulsados}\n` +
-                `> No se pudieron expulsar: ${errores}`
+                `> Errores: ${errores}`
             )
         }
     } catch (error) {
+        console.error('[FANTASMAS]', error)
         return m.reply('> Ocurrió un error al revisar el grupo.')
     }
 }
