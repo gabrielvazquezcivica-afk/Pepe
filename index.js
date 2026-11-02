@@ -558,9 +558,55 @@ function isOwnerMessage(sender) {
 }
 
 // Normalizar mensajes
+// Buscar el mensaje citado dentro de la estructura de Baileys
+function obtenerMensajeCitado(message, chat, sender) {
+    function buscarContextInfo(obj, profundidad = 0) {
+        if (!obj || typeof obj !== 'object' || profundidad > 8) return null
+
+        if (obj.contextInfo?.quotedMessage) {
+            return obj.contextInfo
+        }
+
+        for (const valor of Object.values(obj)) {
+            if (valor && typeof valor === 'object') {
+                const encontrado = buscarContextInfo(valor, profundidad + 1)
+                if (encontrado) return encontrado
+            }
+        }
+
+        return null
+    }
+
+    const contenido = message.message
+    const contexto = buscarContextInfo(contenido)
+
+    if (!contexto?.quotedMessage) return null
+
+    const id = contexto.stanzaId
+    const participante = contexto.participant || sender
+
+    if (!id) return null
+
+    // Crear un mensaje con la estructura que Baileys necesita
+    const citado = {
+        key: {
+            remoteJid: chat,
+            id,
+            participant: participante,
+            fromMe: false
+        },
+        message: contexto.quotedMessage
+    }
+
+    return citado
+}
+
+// Normalizar mensajes
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
+
+    const citado = obtenerMensajeCitado(message, chat, sender)
 
     return {
         ...message,
@@ -574,6 +620,9 @@ function normalizeMessage(message, sock) {
         botName: config.BOT_NAME,
         ownerName: config.OWNER_NAME,
         text: getMessageText(message),
+
+        // Mensaje citado, incluyendo su audio si lo contiene
+        quoted: citado,
 
         reply: (text, options = {}) =>
             sock.sendMessage(
