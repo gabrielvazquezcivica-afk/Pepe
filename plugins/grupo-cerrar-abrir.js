@@ -109,8 +109,8 @@ handler.run = async (sock, m) => {
     }
 }
 
-handler.command = ['close', 'cerrar', 'open', 'abrir']
-handler.help = ['cerrar', 'abrir']
+handler.command = ['close', 'open']
+handler.help = ['close, 'open']
 handler.tags = ['grupo']
 handler.menu = true
 handler.group = true
