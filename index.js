@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import chalk from 'chalk'
 import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
+import { recuperarCierres } from './lib/cierres.js'
 
 // Configuración
 const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
