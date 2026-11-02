@@ -75,8 +75,8 @@ handler.run = async (sock, m) => {
         return m.reply('> ⚠️ Pepe Bot necesita ser administrador del grupo.')
     }
 
-    const cerrar = ['close', 'cerrar'].includes(accion)
-    const abrir = ['open', 'abrir'].includes(accion)
+    const cerrar = ['close'].includes(accion)
+    const abrir = ['open'].includes(accion)
 
     if (!cerrar && !abrir) return
 
