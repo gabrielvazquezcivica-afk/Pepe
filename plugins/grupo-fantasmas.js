@@ -1,4 +1,3 @@
-
 import fs from 'node:fs'
 import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
@@ -21,8 +20,10 @@ function cargarDB() {
 const normalizar = jid =>
     String(jid || '').replace(/:\d+@/, '@').trim()
 
-const buscar = (participantes, identificadores = []) => {
-    const ids = identificadores.filter(Boolean).map(normalizar)
+function buscar(participantes, identificadores = []) {
+    const ids = identificadores
+        .filter(Boolean)
+        .map(normalizar)
 
     return participantes.find(p => {
         const idsParticipante = [p.id, p.jid, p.lid]
@@ -33,18 +34,25 @@ const buscar = (participantes, identificadores = []) => {
     })
 }
 
+function esAdmin(participante) {
+    return ['admin', 'superadmin'].includes(participante?.admin)
+}
+
 async function comprobarPermisos(sock, m, metadata) {
     const participantes = metadata.participants || []
 
     const usuario = buscar(participantes, [
         m.key?.participant,
         m.key?.participantAlt,
+        m.participant,
         m.sender,
         m.senderLid
     ])
 
-    if (!['admin', 'superadmin'].includes(usuario?.admin)) {
-        return { error: 'Solo los administradores pueden usar este comando.' }
+    if (!esAdmin(usuario)) {
+        return {
+            error: '> ✖️ Este comando solo puede ser utilizado por administradores.'
+        }
     }
 
     const botId = sock.user?.id || ''
@@ -56,11 +64,13 @@ async function comprobarPermisos(sock, m, metadata) {
         `${botNumero}@s.whatsapp.net`
     ])
 
-    if (!['admin', 'superadmin'].includes(bot?.admin)) {
-        return { error: 'Necesito ser administrador para expulsar integrantes.' }
+    if (!esAdmin(bot)) {
+        return {
+            error: '> ✖️ Necesito ser administrador para expulsar integrantes.'
+        }
     }
 
-    return { participantes, usuario }
+    return { participantes }
 }
 
 function obtenerFantasmas(chat, participantes) {
@@ -69,7 +79,7 @@ function obtenerFantasmas(chat, participantes) {
     const ahora = Date.now()
 
     return participantes
-        .filter(p => !['admin', 'superadmin'].includes(p.admin))
+        .filter(p => !esAdmin(p))
         .map(p => {
             const ids = [p.id, p.jid, p.lid]
                 .filter(Boolean)
@@ -88,7 +98,8 @@ function obtenerFantasmas(chat, participantes) {
             const ultimaActividad = registro?.ultimaActividad || 0
 
             const pocosMensajes = mensajes < MENSAJES_MINIMOS
-            const inactivo = !ultimaActividad ||
+            const inactivo =
+                !ultimaActividad ||
                 ahora - ultimaActividad >= TIEMPO_INACTIVIDAD
 
             return {
@@ -104,55 +115,50 @@ function obtenerFantasmas(chat, participantes) {
 
 const handler = {}
 
-handler.run = async (sock, m, args = []) => {
-    const chat = m.chat || m.key?.remoteJid
-    const comando = String(m.command || '').toLowerCase()
+handler.run = async (sock, m, args, context) => {
+    const comando = m.command
+    const chat = m.chat
 
     if (!m.isGroup) {
-        return m.reply('> Este comando solo funciona en grupos.')
+        return m.reply('> ✖️ Este comando solo funciona en grupos.')
     }
 
     try {
         const metadata = await sock.groupMetadata(chat)
         const permisos = await comprobarPermisos(sock, m, metadata)
 
-        if (permisos.error) {
-            return m.reply(`> ${permisos.error}`)
-        }
+        if (permisos.error) return m.reply(permisos.error)
 
-        const fantasmas = obtenerFantasmas(chat, permisos.participantes)
-
-        if (!fantasmas.length) {
-            return m.reply('> 🐸 No encontré integrantes que cumplan los criterios.')
-        }
+        const fantasmas = obtenerFantasmas(
+            chat,
+            permisos.participantes
+        )
 
         if (comando === 'fantasmas') {
-            const listaFantasmas = fantasmas.slice(0, 40)
-            const menciones = listaFantasmas.map(p => p.jid)
+            if (!fantasmas.length) {
+                return m.reply(
+                    '> 👻 No se encontraron integrantes inactivos o con menos de 10 mensajes.'
+                )
+            }
 
-            const lista = listaFantasmas.map((p, i) => {
-                const razones = []
+            const lista = fantasmas.slice(0, 40)
 
-                if (p.pocosMensajes) {
-                    razones.push('Menos de 10 mensajes')
-                }
+            const texto = lista.map((p, i) => {
+                const numero = p.jid.split('@')[0]
 
-                if (p.inactivo) {
-                    razones.push('Inactivo 30 días o más')
-                }
+                const estado = p.inactivo
+                    ? 'Inactivo'
+                    : 'Poca actividad'
 
-                return `${i + 1}. @${p.jid.split('@')[0]}
-   Mensajes: ${p.mensajes}
-   Motivo: ${razones.join(' y ')}`
+                return `${i + 1}. @${numero}\n   Mensajes: ${p.mensajes}\n   Estado: ${estado}`
             }).join('\n\n')
 
             await sock.sendMessage(chat, {
                 text:
-                    `👻 *REPORTE DE FANTASMAS*\n\n` +
-                    `Detectados: ${fantasmas.length}\n\n` +
-                    `${lista}\n\n` +
-                    `⚠️ Registro desde la instalación del sistema.`,
-                mentions: menciones
+                    `👻 *FANTASMAS DETECTADOS*\n\n` +
+                    `${texto}\n\n` +
+                    `Total encontrados: ${fantasmas.length}`,
+                mentions: lista.map(p => p.jid)
             }, { quoted: m })
 
             return sendButtons(sock, chat, {
@@ -170,49 +176,57 @@ handler.run = async (sock, m, args = []) => {
         }
 
         if (comando === 'kickfan') {
-            const confirmacion = await m.reply(
-                `> ⚠️ Se encontraron ${fantasmas.length} integrantes que cumplen los criterios.\n` +
-                `> Se excluirán los administradores y el bot.\n` +
-                `> Iniciando expulsiones...`
+            if (!fantasmas.length) {
+                return m.reply(
+                    '> 👻 No hay fantasmas que expulsar.'
+                )
+            }
+
+            const idsExpulsar = [
+                ...new Set(
+                    fantasmas
+                        .map(p => p.jid)
+                        .filter(Boolean)
+                )
+            ]
+
+            if (!idsExpulsar.length) {
+                return m.reply(
+                    '> ✖️ No se encontraron identificadores válidos.'
+                )
+            }
+
+            await m.reply(
+                `> 👻 Se enviará una solicitud para expulsar a ${idsExpulsar.length} integrantes.`
             )
 
-            let expulsados = 0
-            let errores = 0
+            // Una sola llamada con todos los identificadores.
+            const resultado = await sock.groupParticipantsUpdate(
+                chat,
+                idsExpulsar,
+                'remove'
+            )
 
-            for (const fantasma of fantasmas) {
-                const participante = buscar(
-                    permisos.participantes,
-                    [fantasma.jid]
-                )
-
-                if (!participante) continue
-
-                if (['admin', 'superadmin'].includes(participante.admin)) {
-                    continue
-                }
-
-                try {
-                    await sock.groupParticipantsUpdate(
-                        chat,
-                        [fantasma.jid],
-                        'remove'
-                    )
-
-                    expulsados++
-                } catch {
-                    errores++
-                }
-            }
+            const exitosos = Array.isArray(resultado)
+                ? resultado.filter(r =>
+                    r.status === '200' ||
+                    r.status === 200
+                ).length
+                : 0
 
             return m.reply(
                 `> 👻 *KICKFAN FINALIZADO*\n\n` +
-                `> Expulsados: ${expulsados}\n` +
-                `> Errores: ${errores}`
+                `> Solicitudes enviadas: ${idsExpulsar.length}\n` +
+                `> Confirmadas por WhatsApp: ${exitosos}\n\n` +
+                `> Algunos integrantes podrían no haber sido expulsados si WhatsApp rechazó la solicitud.`
             )
         }
+
     } catch (error) {
         console.error('[FANTASMAS]', error)
-        return m.reply('> Ocurrió un error al revisar el grupo.')
+        return m.reply(
+            '> ✖️ Ocurrió un error al procesar el comando.'
+        )
     }
 }
 
