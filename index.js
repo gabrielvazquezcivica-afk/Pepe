@@ -10,6 +10,7 @@ import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
 import { iniciarRevisionCierres, revisarCierres } from './lib/cierres.js'
 import { registrarActividad } from './lib/actividad.js'
+import { instalarBienvenidas } from './lib/bienvenidas.js'
 
 
 // Configuración
