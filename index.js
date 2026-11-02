@@ -9,6 +9,8 @@ import chalk from 'chalk'
 import pino from 'pino'
 import { isBanned } from './lib/banlist.js'
 import { iniciarRevisionCierres, revisarCierres } from './lib/cierres.js'
+import { registrarActividad } from './lib/actividad.js'
+
 
 // Configuración
 const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
