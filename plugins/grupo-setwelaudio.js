@@ -1,3 +1,4 @@
+
 import fs from 'fs'
 import path from 'path'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
@@ -31,6 +32,39 @@ async function esAdmin(sock, chat, sender) {
   return ['admin', 'superadmin'].includes(participante?.admin)
 }
 
+// Buscar el mensaje original citado
+function obtenerMensajeCitado(citado) {
+  if (!citado) return null
+
+  const original = citado.fakeObj || citado
+
+  let mensaje = original.message || {}
+
+  // Quitar envolturas de mensajes
+  while (
+    mensaje.ephemeralMessage ||
+    mensaje.viewOnceMessage ||
+    mensaje.viewOnceMessageV2 ||
+    mensaje.viewOnceMessageV2Extension
+  ) {
+    mensaje =
+      mensaje.ephemeralMessage?.message ||
+      mensaje.viewOnceMessage?.message ||
+      mensaje.viewOnceMessageV2?.message ||
+      mensaje.viewOnceMessageV2Extension?.message ||
+      mensaje
+  }
+
+  const audio = mensaje.audioMessage
+
+  if (!audio) return null
+
+  return {
+    original,
+    audio
+  }
+}
+
 const handler = {}
 
 handler.run = async (sock, m, args) => {
@@ -45,7 +79,7 @@ handler.run = async (sock, m, args) => {
   const db = cargarDB()
   db[m.chat] ??= {}
 
-  // Opción 1: guardar una URL
+  // Opción 1: guardar URL
   const url = args.join(' ').trim()
 
   if (url) {
@@ -58,6 +92,7 @@ handler.run = async (sock, m, args) => {
 
       db[m.chat].welcomeAudio = url
       delete db[m.chat].welcomeAudioFile
+
       guardarDB(db)
 
       return m.reply('> ✅ URL del audio de bienvenida guardada correctamente.')
@@ -66,35 +101,36 @@ handler.run = async (sock, m, args) => {
     }
   }
 
-  // Opción 2: guardar un audio respondido
+  // Opción 2: guardar audio citado
   const citado = m.quoted
 
   if (!citado) {
     return m.reply(
-      '> ⚙️ ¿Cómo configurar el audio?\n\n' +
-      '> 1. Responde a un audio con .setwelaudio\n' +
-      '> 2. O utiliza una URL:\n' +
+      '> ⚙️ Configuración del audio de bienvenida:\n\n' +
+      '> Responde directamente a un audio con .setwelaudio\n\n' +
+      '> También puedes utilizar una URL:\n' +
       '> .setwelaudio https://ejemplo.com/audio.mp3'
     )
   }
 
-  const mensaje = citado.message || {}
-  const contenido = mensaje.audioMessage
-    ? mensaje
-    : mensaje.ephemeralMessage?.message || mensaje
+  const datos = obtenerMensajeCitado(citado)
 
-  if (!contenido.audioMessage) {
-    return m.reply('> ❌ Debes responder a un mensaje que contenga un audio.')
+  if (!datos) {
+    return m.reply('> ❌ El mensaje citado no contiene un audio válido.')
   }
 
   try {
     fs.mkdirSync(AUDIO_DIR, { recursive: true })
 
+    // Descargar usando el mensaje original de Baileys
     const buffer = await downloadMediaMessage(
-      citado,
+      datos.original,
       'buffer',
       {},
-      { logger: console, reuploadRequest: sock.updateMediaMessage }
+      {
+        logger: console,
+        reuploadRequest: sock.updateMediaMessage
+      }
     )
 
     if (!buffer || !buffer.length) {
@@ -110,12 +146,17 @@ handler.run = async (sock, m, args) => {
 
     db[m.chat].welcomeAudioFile = archivo
     delete db[m.chat].welcomeAudio
+
     guardarDB(db)
 
     return m.reply('> ✅ Audio de bienvenida guardado correctamente.')
   } catch (error) {
-    console.error('Error guardando audio:', error)
-    return m.reply('> ❌ No se pudo guardar el audio. Intenta responder nuevamente al archivo.')
+    console.error('Error guardando audio de bienvenida:', error)
+
+    return m.reply(
+      '> ❌ No se pudo descargar el audio.\n' +
+      '> Comprueba que respondiste directamente al audio original.'
+    )
   }
 }
 
