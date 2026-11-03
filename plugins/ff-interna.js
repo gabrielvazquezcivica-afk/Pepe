@@ -547,7 +547,7 @@ handler.command = [
 ]
 
 handler.help = ['interna']
-handler.tags = ['ff']
+handler.tags = ['free fire']
 handler.menu = true
 
 export default handler
