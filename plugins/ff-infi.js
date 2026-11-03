@@ -28,6 +28,14 @@ handler.run = async (sock, m) => {
 • K
 
 ━━━━━━━━━━━━━━━━━━
+
+🔫 *ARMAS PERMITIDAS*
+
+• Solamente SMG
+• No se permiten otras categorías de armas
+
+━━━━━━━━━━━━━━━━━━
+
 🐸 *PEPE BOT • FREE FIRE*`
 
     return m.reply(texto)
