@@ -23,10 +23,7 @@ async function esAdmin(sock, chat, sender) {
   const normalizar = jid =>
     String(jid || '').replace(/:\d+@/, '@')
 
-  const idsSender = [
-    sender,
-    mSenderLid(sender)
-  ].filter(Boolean).map(normalizar)
+  const idsSender = [sender].filter(Boolean).map(normalizar)
 
   const participante = metadata.participants.find(p =>
     [p.id, p.jid, p.lid]
@@ -37,16 +34,44 @@ async function esAdmin(sock, chat, sender) {
   return ['admin', 'superadmin'].includes(participante?.admin)
 }
 
-function mSenderLid(sender) {
-  return sender
+function extraerTexto(message) {
+  let contenido = message?.message
+
+  while (contenido) {
+    if (contenido.ephemeralMessage?.message) {
+      contenido = contenido.ephemeralMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessage?.message) {
+      contenido = contenido.viewOnceMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessageV2?.message) {
+      contenido = contenido.viewOnceMessageV2.message
+      continue
+    }
+
+    break
+  }
+
+  return (
+    contenido?.extendedTextMessage?.text ??
+    contenido?.conversation ??
+    contenido?.imageMessage?.caption ??
+    contenido?.videoMessage?.caption ??
+    ''
+  )
 }
 
-// Obtener el texto conservando los saltos de línea
 function obtenerTexto(m) {
-  const texto = m.text || m.body || ''
+  const texto = extraerTexto(m).replace(/\r\n/g, '\n')
 
-  return String(texto)
-    .replace(/^[.!/#]setwelcome\b/i, '')
+  // Quitar únicamente el comando y su primer espacio o salto
+  return texto
+    .replace(/^[.!/#]setwelcome\b[ \t]*/i, '')
+    .replace(/^\n/, '')
     .trim()
 }
 
