@@ -260,7 +260,7 @@ Ejemplos:
 🕒 PEPE BOT convertirá automáticamente el horario a los otros países.
 
 🏆 *INSCRIPCIONES*
-6 jugadores principales y 2 suplentes.
+6 jugadores principales y 3 suplentes.
 
 🔒 *CÓMO CERRAR EL VERSUS*
 
@@ -539,7 +539,7 @@ handler.command = [
 ]
 
 handler.help = ['6vs6']
-handler.tags = ['free fire']
+handler.tags = ['ff']
 handler.menu = true
 
 export default handler
