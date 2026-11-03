@@ -1,3 +1,4 @@
+
 import fs from 'fs'
 import path from 'path'
 
@@ -19,28 +20,83 @@ function guardarDB(db) {
 async function esAdmin(sock, chat, sender) {
   const metadata = await sock.groupMetadata(chat)
   const normalizar = jid => String(jid || '').replace(/:\d+@/, '@')
+
   const participante = metadata.participants.find(p =>
-    [p.id, p.jid, p.lid].filter(Boolean).some(id => normalizar(id) === normalizar(sender))
+    [p.id, p.jid, p.lid]
+      .filter(Boolean)
+      .some(id => normalizar(id) === normalizar(sender))
   )
+
   return ['admin', 'superadmin'].includes(participante?.admin)
+}
+
+function extraerTexto(message) {
+  let contenido = message?.message
+
+  while (contenido) {
+    if (contenido.ephemeralMessage?.message) {
+      contenido = contenido.ephemeralMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessage?.message) {
+      contenido = contenido.viewOnceMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessageV2?.message) {
+      contenido = contenido.viewOnceMessageV2.message
+      continue
+    }
+
+    break
+  }
+
+  return (
+    contenido?.extendedTextMessage?.text ??
+    contenido?.conversation ??
+    contenido?.imageMessage?.caption ??
+    contenido?.videoMessage?.caption ??
+    ''
+  )
+}
+
+function obtenerTexto(m) {
+  const texto = extraerTexto(m).replace(/\r\n/g, '\n')
+
+  return texto
+    .replace(/^[.!/#]setbye\b[ \t]*/i, '')
+    .replace(/^\n/, '')
+    .trim()
 }
 
 const handler = {}
 
 handler.run = async (sock, m, args) => {
-  if (!m.isGroup) return m.reply('> ❌ Este comando solo funciona en grupos.')
+  if (!m.isGroup) {
+    return m.reply('> ❌ Este comando solo funciona en grupos.')
+  }
+
   if (!(await esAdmin(sock, m.chat, m.sender))) {
     return m.reply('> ⛔ Solo los administradores pueden usar este comando.')
   }
 
-  const texto = args.join(' ').trim()
+  const texto = obtenerTexto(m)
+
   if (!texto) {
-    return m.reply('> ⚙️ Ejemplo: .setbye ¡Hasta pronto @user! @group ahora tiene @count integrantes.')
+    return m.reply(
+      '> ⚙️ Escribe el mensaje de despedida.\n' +
+      '> Ejemplo:\n' +
+      '> .setbye ¡Hasta pronto @user!\n' +
+      '> Has salido de @group.\n' +
+      '> Ahora somos @count integrantes.'
+    )
   }
 
   const db = cargarDB()
   db[m.chat] ??= {}
   db[m.chat].byeMessage = texto
+
   guardarDB(db)
 
   return m.reply('> ✅ Mensaje de despedida personalizado guardado.')
