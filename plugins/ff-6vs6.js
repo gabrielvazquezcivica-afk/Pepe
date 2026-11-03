@@ -539,7 +539,7 @@ handler.command = [
 ]
 
 handler.help = ['6vs6']
-handler.tags = ['ff']
+handler.tags = ['free fire']
 handler.menu = true
 
 export default handler
