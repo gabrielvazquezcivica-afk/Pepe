@@ -777,39 +777,9 @@ function esComandoFreeFire(handler) {
     return tags.includes('freefire') || tags.includes('ff')
 }
 
-// Procesar mensajes
 
+ // Procesar mensajes
 async function processMessage(message, sock) {
-    if (!message?.key?.remoteJid) return
-
-    const m = normalizeMessage(message, sock)
-
-    // Ejecutar detectores globales de plugins
-    const pluginsUnicos = new Set([...plugins.values()].flat())
-
-    for (const plugin of pluginsUnicos) {
-        if (typeof plugin.all === 'function') {
-            try {
-                await plugin.all(sock, m)
-            } catch (error) {
-                console.error('[PLUGIN ALL]', error)
-            }
-        }
-    }
-
-    // A partir de aquí continúa tu sistema normal de comandos
-    if (!m.text || typeof m.text !== 'string') return
-
-    const parsed = parseCommand(m.text)
-    if (!parsed) return
-
-    const matches = plugins.get(parsed.command)
-    if (!matches?.length) return
-
-    // Conserva aquí el resto de tu código original:
-    // validaciones, ejecución de comandos, logs, etc.
-}
-
     if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
 
@@ -818,18 +788,46 @@ async function processMessage(message, sock) {
 
     registrarActividad(message)
 
+    // Normalizar mensaje
+    const m = normalizeMessage(message, sock)
+
+    // Ejecutar detectores globales de plugins
+    // Los plugins se guardan como { handler, module, file }
+    const pluginsUnicos = new Set(
+        [...plugins.values()]
+            .flat()
+            .map(plugin => plugin.handler)
+            .filter(Boolean)
+    )
+
+    for (const plugin of pluginsUnicos) {
+        if (typeof plugin.all !== 'function') continue
+
+        try {
+            await plugin.all(sock, m)
+        } catch (error) {
+            console.error(
+                chalk.red('[PLUGIN ALL]'),
+                error.stack || error.message
+            )
+        }
+    }
+
     // Revisar si el usuario está muteado
     if (await revisarMuteado(sock, message)) return
 
+    // Sistema AFK
     try {
         await detectarRegresoAFK(sock, message)
         await detectarMencionesAFK(sock, message)
     } catch (error) {
-        console.error(chalk.red('❌ Error en sistema AFK:'), error)
+        console.error(
+            chalk.red('❌ Error en sistema AFK:'),
+            error
+        )
     }
 
-    const m = normalizeMessage(message, sock)
-
+    // Detectar comandos
     if (!m.text || typeof m.text !== 'string') return
 
     const parsed = parseCommand(m.text)
@@ -853,14 +851,17 @@ async function processMessage(message, sock) {
         }
     }
 
+    // Sistema de usuarios baneados
     const isBanCommand = ['ban', 'unban'].includes(parsed.command)
 
     if (!m.isOwner && !isBanCommand && isBanned(m.sender)) {
         return
     }
 
+    // Registrar comando
     await logCommand(m, parsed, sock)
 
+    // Ejecutar plugins
     for (const plugin of matches) {
         try {
             await executePlugin(plugin, m, parsed, sock)
@@ -878,6 +879,7 @@ async function processMessage(message, sock) {
         }
     }
 }
+
 
 // Conectar socket
 async function attachSocket(sock) {
