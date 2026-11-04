@@ -602,12 +602,9 @@ function obtenerMensajeCitado(message, chat, sender) {
 
 // Normalizar mensajes
 
-// Normalizar mensajes
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
-
-    const citado = obtenerMensajeCitado(message, chat, sender)
 
     return {
         ...message,
@@ -621,10 +618,6 @@ function normalizeMessage(message, sock) {
         botName: config.BOT_NAME,
         ownerName: config.OWNER_NAME,
         text: getMessageText(message),
-
-        // Mensaje citado, incluyendo su audio si lo contiene
-        quoted: citado,
-
         reply: (text, options = {}) =>
             sock.sendMessage(
                 chat,
@@ -787,18 +780,34 @@ function esComandoFreeFire(handler) {
 // Procesar mensajes
 
 async function processMessage(message, sock) {
+    if (!message?.key?.remoteJid) return
 
-// Detectores globales de plugins
-const pluginsUnicos = new Set([...plugins.values()].flat())
+    const m = normalizeMessage(message, sock)
 
-for (const plugin of pluginsUnicos) {
-    if (typeof plugin.all === 'function') {
-        try {
-            await plugin.all(sock, m)
-        } catch (error) {
-            console.error('[PLUGIN ALL]', error)
+    // Ejecutar detectores globales de plugins
+    const pluginsUnicos = new Set([...plugins.values()].flat())
+
+    for (const plugin of pluginsUnicos) {
+        if (typeof plugin.all === 'function') {
+            try {
+                await plugin.all(sock, m)
+            } catch (error) {
+                console.error('[PLUGIN ALL]', error)
+            }
         }
     }
+
+    // A partir de aquí continúa tu sistema normal de comandos
+    if (!m.text || typeof m.text !== 'string') return
+
+    const parsed = parseCommand(m.text)
+    if (!parsed) return
+
+    const matches = plugins.get(parsed.command)
+    if (!matches?.length) return
+
+    // Conserva aquí el resto de tu código original:
+    // validaciones, ejecución de comandos, logs, etc.
 }
 
     if (!message?.key?.remoteJid || !message.message) return
