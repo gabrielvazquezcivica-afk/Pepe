@@ -37,63 +37,57 @@ function estado(valor) {
     : '🔴 Desactivado'
 }
 
-function obtenerMensaje(datos, id, tipo) {
-  const grupo = datos[id] || {}
-
-  const mensaje = tipo === 'bienvenida'
-    ? grupo.welcome || grupo.bienvenida || grupo.msg || ''
-    : grupo.bye || grupo.despedida || grupo.goodbye || ''
-
-  return typeof mensaje === 'string' && mensaje.trim()
-    ? '✏️ Personalizado'
-    : '📄 Predeterminado'
-}
-
 const handler = async (m, { conn }) => {
-  const id = m.chat
+  try {
+    const id = m.chat
 
-  if (!id.endsWith('@g.us')) {
-    return m.reply('> ⚠️ Este comando solamente funciona en grupos.')
-  }
+    if (!id.endsWith('@g.us')) {
+      return m.reply('> ⚠️ Este comando solamente funciona en grupos.')
+    }
 
-  const metadata = await conn.groupMetadata(id)
-  const participantes = metadata.participants || []
+    const metadata = await conn.groupMetadata(id)
+    const participantes = metadata.participants || []
 
-  // Verificar que quien ejecuta sea administrador
-  const sender = participantes.find(p => p.id === m.sender)
+    // Comprobar administrador
+    const sender = m.sender
+    const usuario = participantes.find(p => p.id === sender)
 
-  if (!sender || !['admin', 'superadmin'].includes(sender.admin)) {
-    return m.reply('> ❌ Este comando solamente puede ser utilizado por administradores del grupo.')
-  }
+    const esAdmin = usuario?.admin === 'admin' ||
+      usuario?.admin === 'superadmin'
 
-  const admins = participantes.filter(p =>
-    ['admin', 'superadmin'].includes(p.admin)
-  )
+    if (!esAdmin) {
+      return m.reply('> ❌ Este comando solamente puede ser utilizado por administradores.')
+    }
 
-  // Leer bases de datos
-  const modoadmin = leerJSON('modoadmin.json')
-  const antilink = leerJSON('antilink.json')
-  const bienvenidas = leerJSON('bienvenidas.json')
+    // Leer bases de datos
+    const modoadmin = leerJSON('modoadmin.json')
+    const antilink = leerJSON('antilink.json')
+    const bienvenidas = leerJSON('bienvenidas.json')
 
-  // Obtener configuraciones
-  const estadoAntilink = obtenerEstado(antilink, id)
-  const estadoModoadmin = obtenerEstado(modoadmin, id)
-  const estadoWelcome = obtenerEstado(bienvenidas, id)
+    // Obtener administradores
+    const admins = participantes.filter(p =>
+      p.admin === 'admin' ||
+      p.admin === 'superadmin'
+    )
 
-  // Obtener mensajes
-  const bienvenida = obtenerMensaje(
-    bienvenidas,
-    id,
-    'bienvenida'
-  )
+    // Descripción
+    const descripcion = metadata.desc?.trim() ||
+      'Sin descripción'
 
-  const despedida = obtenerMensaje(
-    bienvenidas,
-    id,
-    'despedida'
-  )
+    // Estados
+    const estadoAntilink = estado(
+      obtenerEstado(antilink, id)
+    )
 
-  const texto = `
+    const estadoModoadmin = estado(
+      obtenerEstado(modoadmin, id)
+    )
+
+    const estadoWelcome = estado(
+      obtenerEstado(bienvenidas, id)
+    )
+
+    const texto = `
 ╭━━〔 🐸 PEPE BOT 〕━━╮
 ┃
 ┃  📋 INFORMACIÓN DEL GRUPO
@@ -103,37 +97,41 @@ const handler = async (m, { conn }) => {
 ┃
 ┃  👥 Miembros: ${participantes.length}
 ┃  👑 Administradores: ${admins.length}
+┃
+┣━━━━━━━━━━━━━━━━━━
+┃  📝 DESCRIPCIÓN
+┃
+┃  ${descripcion}
+┃
 ┣━━━━━━━━━━━━━━━━━━
 ┃  ⚙️ CONFIGURACIONES
 ┃
-┃  🔗 Antilink:
-┃  ${estado(estadoAntilink)}
+┃   🔗 Antilink: ${estadoAntilink}
 ┃
-┃  🛡️ Modoadmin:
-┃  ${estado(estadoModoadmin)}
+┃   🛡️ Modoadmin: ${estadoModoadmin}
 ┃
-┃  👋 Welcome:
-┃  ${estado(estadoWelcome)}
-┣━━━━━━━━━━━━━━━━━━
-┃  💬 MENSAJES DE BIENVENIDA Y SALIDA
+┃   👋 Welcome: ${estadoWelcome}
 ┃
-┃  📥 Bienvenida:
-┃  ${bienvenida}
-┃
-┃  📤 Despedida:
-┃  ${despedida}
-┃
-╰━━〔 PEPE BOT 〕━━╯
+╰━━〔 🐸 PEPE BOT 〕━━╯
 `.trim()
 
-  await conn.sendMessage(id, {
-    text: texto
-  }, { quoted: m })
+    await conn.sendMessage(id, {
+      text: texto
+    }, {
+      quoted: m
+    })
+
+  } catch (error) {
+    console.error('[INFOGRUPO]', error)
+
+    m.reply('> ❌ Ocurrió un error al obtener la información del grupo.')
+  }
 }
 
 handler.command = ['infogrupo']
 handler.help = ['infogrupo']
 handler.tags = ['grupo']
 handler.group = true
+handler.admin = true
 
 export default handler
