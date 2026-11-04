@@ -601,18 +601,9 @@ function obtenerMensajeCitado(message, chat, sender) {
 }
 
 // Normalizar mensajes
-function normalizeMessage(message, sock) {
-const pluginsUnicos = new Set([...plugins.values()].flat())
 
-for (const plugin of pluginsUnicos) {
-  if (typeof plugin.all === 'function') {
-    try {
-      await plugin.all(sock, m)
-    } catch (error) {
-      console.error('[PLUGIN ALL]', error)
-    }
-  }
-}
+// Normalizar mensajes
+function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
 
@@ -642,6 +633,7 @@ for (const plugin of pluginsUnicos) {
             )
     }
 }
+
 
 // Detectar comandos
 function parseCommand(text) {
