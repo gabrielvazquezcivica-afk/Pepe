@@ -4,7 +4,7 @@ import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
 
 const DB_DIR = './database'
-const DB_FILE = path.join(DB_DIR, antilink.json')
+const DB_FILE = path.join(DB_DIR, 'antilink.json')
 
 const handler = {}
 
