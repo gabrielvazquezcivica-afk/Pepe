@@ -3,105 +3,154 @@ import config from '../config.js'
 
 const handler = {}
 
-function normalizarNumero(numero) {
-    return String(numero || '').replace(/\D/g, '')
+const limpiarNumero = jid =>
+    String(jid || '').replace(/\D/g, '')
+
+const normalizar = jid =>
+    String(jid || '').replace(/:\d+@/, '@').trim()
+
+const esAdmin = participante =>
+    ['admin', 'superadmin'].includes(participante?.admin)
+
+const buscar = (participantes, identificadores = []) => {
+    const ids = identificadores
+        .filter(Boolean)
+        .map(normalizar)
+
+    return participantes.find(p => {
+        const idsParticipante = [p.id, p.jid, p.lid]
+            .filter(Boolean)
+            .map(normalizar)
+
+        return idsParticipante.some(id => ids.includes(id))
+    })
 }
 
 handler.run = async (sock, m) => {
-    const chat = m.chat || m.key?.remoteJid
+    const chat = m.key.remoteJid
 
+    const aviso = text =>
+        sock.sendMessage(chat, {
+            text
+        }, { quoted: m })
+
+    const reaccion = async emoji => {
+        try {
+            await sock.sendMessage(chat, {
+                react: { text: emoji, key: m.key }
+            })
+        } catch {}
+    }
+
+    // Validar owner.
     const owners = (config.owner || [])
-        .map(normalizarNumero)
         .filter(Boolean)
+        .map(limpiarNumero)
 
-    const numero = normalizarNumero(m.senderNumber || m.sender)
-    const esOwner = m.isOwner || owners.includes(numero)
+    const ownerLids = (config.ownerLid || [])
+        .filter(Boolean)
+        .map(normalizar)
+
+    const idsEjecutor = [
+        m.key?.participant,
+        m.key?.participantAlt,
+        m.participant,
+        m.sender,
+        m.senderLid
+    ]
+
+    const numeroEjecutor = limpiarNumero(
+        m.senderNumber || m.sender
+    )
+
+    const esOwner =
+        m.isOwner ||
+        owners.includes(numeroEjecutor) ||
+        idsEjecutor.some(id => ownerLids.includes(normalizar(id)))
 
     if (!esOwner) {
-        return sock.sendMessage(chat, {
-            text: '> 🚫 Este comando solo puede usarlo el owner.'
-        }, { quoted: m })
+        await reaccion('🚫')
+        return aviso('> 🚫 Este comando solo puede usarlo el owner.')
     }
 
+    // Validar grupo.
     if (!chat?.endsWith('@g.us')) {
-        return sock.sendMessage(chat, {
-            text: '> ⚠️ Este comando solamente funciona en grupos.'
-        }, { quoted: m })
+        await reaccion('❌')
+        return aviso('> 🐸 Este comando solo funciona en grupos.')
     }
+
+    // Obtener participantes.
+    let metadata
 
     try {
-        const metadata = await sock.groupMetadata(chat)
+        metadata = await sock.groupMetadata(chat)
+    } catch (error) {
+        console.error('[AUTOADMIN] Error obteniendo metadata:', error)
+        await reaccion('❌')
+        return aviso('> ❌ No pude obtener los datos del grupo.')
+    }
 
-        const miNumero = sock.user?.id
-        const miLid = sock.user?.lid
+    const participantes = metadata.participants || []
 
-        const normalizarJid = jid =>
-            String(jid || '').replace(/:\d+@/, '@')
+    // Identificar al bot con el mismo método de KICK.
+    const botId = sock.user?.id || ''
+    const botNumero = botId.split(':')[0].split('@')[0]
 
-        const soyAdmin = metadata.participants.some(p => {
-            const coincide =
-                normalizarJid(p.id) === normalizarJid(miNumero) ||
-                normalizarJid(p.jid) === normalizarJid(miNumero) ||
-                normalizarJid(p.lid) === normalizarJid(miLid)
+    const idsBot = [
+        botId,
+        sock.user?.lid,
+        `${botNumero}@s.whatsapp.net`
+    ]
 
-            return coincide &&
-                (p.admin === 'admin' || p.admin === 'superadmin')
-        })
+    const botInfo = buscar(participantes, idsBot)
 
-        if (!soyAdmin) {
-            return sock.sendMessage(chat, {
-                text: '> ❌ Pepe Bot necesita ser administrador para ejecutar esta acción.'
-            }, { quoted: m })
-        }
+    console.log('[AUTOADMIN] IDs del bot:', idsBot)
+    console.log('[AUTOADMIN] Bot encontrado:', botInfo)
 
-        const ownerJid = m.sender || m.key?.participant
+    if (!esAdmin(botInfo)) {
+        await reaccion('⚠️')
+        return aviso('> ⚠️ Pepe Bot no aparece como administrador en los participantes del grupo.')
+    }
 
-        if (!ownerJid) {
-            return sock.sendMessage(chat, {
-                text: '> ❌ No pude identificar tu usuario.'
-            }, { quoted: m })
-        }
+    // Identificar al owner que ejecutó el comando.
+    const ownerInfo = buscar(participantes, idsEjecutor)
 
-        const participante = metadata.participants.find(p => {
-            const jid = normalizarJid(ownerJid)
+    if (!ownerInfo) {
+        await reaccion('❌')
+        return aviso('> ❌ No pude identificarte entre los participantes del grupo.')
+    }
 
-            return [p.id, p.jid, p.lid]
-                .filter(Boolean)
-                .some(id => normalizarJid(id) === jid)
-        })
+    if (esAdmin(ownerInfo)) {
+        await reaccion('ℹ️')
+        return aviso('> ⚠️ Ya tienes administrador en este grupo.')
+    }
 
-        if (!participante) {
-            return sock.sendMessage(chat, {
-                text: '> ❌ No pude encontrarte entre los participantes del grupo.'
-            }, { quoted: m })
-        }
-
-        if (
-            participante.admin === 'admin' ||
-            participante.admin === 'superadmin'
-        ) {
-            return sock.sendMessage(chat, {
-                text: '> ⚠️ Ya tienes administrador en este grupo.'
-            }, { quoted: m })
-        }
-
+    // Dar administrador.
+    try {
         await sock.groupParticipantsUpdate(
             chat,
-            [participante.id || ownerJid],
+            [ownerInfo.id],
             'promote'
         )
 
-        await sock.sendMessage(chat, {
-            text: `> ✅ @${numero || ownerJid.split('@')[0]} ahora es administrador del grupo.\n\n> 🐸 *PEPE BOT*`,
-            mentions: [participante.id || ownerJid]
+        await reaccion('✅')
+
+        return sock.sendMessage(chat, {
+            text:
+                `> 🐸 *PEPE BOT — AUTOADMIN*\n\n` +
+                `> 👑 @${limpiarNumero(ownerInfo.id)} ahora es administrador del grupo.\n\n` +
+                `> ✅ Permisos otorgados correctamente.`,
+            mentions: [ownerInfo.id]
         }, { quoted: m })
 
     } catch (error) {
-        console.error('[AUTOADMIN] Error:', error)
+        console.error('[AUTOADMIN] Error promocionando owner:', error)
 
-        await sock.sendMessage(chat, {
-            text: '> ❌ No se pudo otorgar administrador. Verifica los permisos del bot e inténtalo nuevamente.'
-        }, { quoted: m })
+        await reaccion('❌')
+
+        return aviso(
+            '> ❌ No se pudo otorgar administrador. Comprueba los permisos del bot.'
+        )
     }
 }
 
