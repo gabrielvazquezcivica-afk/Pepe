@@ -787,6 +787,20 @@ function esComandoFreeFire(handler) {
 // Procesar mensajes
 
 async function processMessage(message, sock) {
+
+// Detectores globales de plugins
+const pluginsUnicos = new Set([...plugins.values()].flat())
+
+for (const plugin of pluginsUnicos) {
+    if (typeof plugin.all === 'function') {
+        try {
+            await plugin.all(sock, m)
+        } catch (error) {
+            console.error('[PLUGIN ALL]', error)
+        }
+    }
+}
+
     if (!message?.key?.remoteJid || !message.message) return
     if (message.key.fromMe) return
 
