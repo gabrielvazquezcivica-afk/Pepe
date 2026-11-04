@@ -6,201 +6,277 @@ import { sendButtons } from 'baileys-buttons'
 const DB_DIR = './database'
 const DB_FILE = path.join(DB_DIR, 'antilink.json')
 
-const DETECTAR_LINK =
-  /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i
-
 const handler = {}
 
-function iniciarDB() {
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true })
-  }
-
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, '{}')
-  }
-}
-
 function cargarDB() {
-  iniciarDB()
+    if (!fs.existsSync(DB_DIR)) {
+        fs.mkdirSync(DB_DIR, { recursive: true })
+    }
 
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
-  } catch {
-    return {}
-  }
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, '{}')
+    }
+
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
+    } catch (error) {
+        console.error('[ANTILINK] Error leyendo DB:', error)
+        return {}
+    }
 }
 
 function guardarDB(db) {
-  iniciarDB()
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+    fs.mkdirSync(DB_DIR, { recursive: true })
+
+    const temporal = `${DB_FILE}.tmp`
+    fs.writeFileSync(temporal, JSON.stringify(db, null, 2))
+    fs.renameSync(temporal, DB_FILE)
 }
 
-const normalizar = jid =>
-  String(jid || '').replace(/:\d+@/, '@').trim()
-
-function esAdmin(participante) {
-  return ['admin', 'superadmin'].includes(participante?.admin)
+function obtenerId(m) {
+    return m.key?.participant || m.sender || m.key?.remoteJid
 }
 
-function buscar(participantes, identificadores = []) {
-  const ids = identificadores.filter(Boolean).map(normalizar)
-
-  return participantes.find(p =>
-    [p.id, p.jid, p.lid]
-      .filter(Boolean)
-      .map(normalizar)
-      .some(id => ids.includes(id))
-  )
+function normalizarId(id) {
+    return String(id || '').split(':')[0]
 }
 
-function obtenerIdsUsuario(m) {
-  return [
-    m.key?.participant,
-    m.key?.participantAlt,
-    m.participant,
-    m.sender,
-    m.senderLid
-  ]
+function coincidenIds(a, b) {
+    if (!a || !b) return false
+
+    const idA = normalizarId(a)
+    const idB = normalizarId(b)
+
+    if (idA === idB) return true
+
+    const numeroA = idA.replace(/\D/g, '')
+    const numeroB = idB.replace(/\D/g, '')
+
+    return numeroA.length > 5 && numeroA === numeroB
 }
 
-function obtenerInfoBot(sock) {
-  const botId = sock.user?.id || ''
-  const botNumero = botId.split(':')[0].split('@')[0]
+async function esAdmin(sock, m) {
+    const chat = m.key?.remoteJid
 
-  return [
-    botId,
-    sock.user?.lid,
-    `${botNumero}@s.whatsapp.net`
-  ]
+    if (!chat?.endsWith('@g.us')) return false
+    if (m.isAdmin === true) return true
+
+    try {
+        const metadata = await sock.groupMetadata(chat)
+        const id = obtenerId(m)
+
+        const participante = metadata.participants.find(p =>
+            coincidenIds(p.id, id) ||
+            coincidenIds(p.lid, id)
+        )
+
+        return Boolean(
+            participante?.admin === 'admin' ||
+            participante?.admin === 'superadmin'
+        )
+    } catch (error) {
+        console.error('[ANTILINK] Error verificando admin:', error.message)
+        return false
+    }
 }
 
-async function obtenerParticipantes(sock, chat) {
-  const metadata = await sock.groupMetadata(chat)
-  return metadata.participants || []
+async function botEsAdmin(sock, chat, metadata) {
+    try {
+        const botIds = [
+            sock.user?.id,
+            sock.user?.lid
+        ].filter(Boolean)
+
+        const participante = metadata.participants.find(p =>
+            botIds.some(id =>
+                coincidenIds(p.id, id) ||
+                coincidenIds(p.lid, id)
+            )
+        )
+
+        return Boolean(
+            participante?.admin === 'admin' ||
+            participante?.admin === 'superadmin'
+        )
+    } catch {
+        return false
+    }
 }
 
-async function esAdminUsuario(sock, chat, m) {
-  const participantes = await obtenerParticipantes(sock, chat)
-  const usuario = buscar(participantes, obtenerIdsUsuario(m))
+function contieneEnlace(texto) {
+    if (!texto || typeof texto !== 'string') return false
 
-  return esAdmin(usuario)
+    const regex = /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i
+
+    return regex.test(texto)
 }
 
-async function esAdminBot(sock, chat) {
-  const participantes = await obtenerParticipantes(sock, chat)
-  const bot = buscar(participantes, obtenerInfoBot(sock))
+async function mostrarMenu(sock, m) {
+    const chat = m.key.remoteJid
+    const db = cargarDB()
+    const activo = db[chat] === true
 
-  return esAdmin(bot)
+    const texto = `╭━━━━━━━━━━━━━━━━━━╮
+┃ 🛡️ *SISTEMA ANTILINK*
+┃ 🐸 *PEPE BOT*
+╰━━━━━━━━━━━━━━━━━━╯
+
+📌 *Configuración del grupo*
+
+🔰 Estado: ${activo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
+
+${activo
+    ? '🚫 Los miembros normales no pueden enviar enlaces.'
+    : '🔓 Los miembros pueden enviar enlaces.'}
+
+👮 Los administradores siempre podrán compartir enlaces.
+
+━━━━━━━━━━━━━━━━━━
+Selecciona una opción:`
+
+    try {
+        const resultado = await sendButtons(sock, chat, {
+            title: '🛡️ ANTILINK',
+            text: texto,
+            footer: '🐸 PEPE BOT',
+            buttons: [
+                {
+                    id: '.antilink_on',
+                    displayText: '🟢 Activar'
+                },
+                {
+                    id: '.antilink_off',
+                    displayText: '🔴 Desactivar'
+                }
+            ],
+            quoted: m
+        })
+
+        return resultado
+    } catch (error) {
+        console.error('[ANTILINK MENU] Error:', error.message)
+        return m.reply('❌ No se pudo mostrar el menú Antilink.')
+    }
 }
 
 async function cambiarEstado(sock, m, estado) {
-  if (!m.isGroup) {
-    return m.reply('> ⚠️ Este comando solo funciona en grupos.')
-  }
+    const chat = m.key.remoteJid
 
-  try {
-    if (!(await esAdminUsuario(sock, m.chat, m))) {
-      return m.reply('> ❌ Solo los administradores pueden cambiar el antilink.')
+    if (!chat?.endsWith('@g.us')) {
+        return m.reply('> ❌ Este comando solamente funciona en grupos.')
     }
 
-    if (!(await esAdminBot(sock, m.chat))) {
-      return m.reply('> ⚠️ Necesito ser administrador para administrar los mensajes.')
+    if (!(await esAdmin(sock, m))) {
+        return m.reply('> ⚠️ Solamente los administradores pueden modificar el Antilink.')
     }
 
     const db = cargarDB()
-    db[m.chat] = estado
+
+    if (db[chat] === estado) {
+        return m.reply(
+            estado
+                ? '> ⚠️ El Antilink ya está activado.'
+                : '> ⚠️ El Antilink ya está desactivado.'
+        )
+    }
+
+    db[chat] = estado
     guardarDB(db)
 
     return m.reply(
-      estado
-        ? '> ✅ El antilink ha sido activado.\n> 🚫 Los usuarios no administradores no podrán enviar enlaces.'
-        : '> ✅ El antilink ha sido desactivado.'
+        estado
+            ? '> 🟢 *ANTILINK ACTIVADO*\n\n> 🚫 Los miembros que no sean administradores no podrán enviar enlaces.'
+            : '> 🔴 *ANTILINK DESACTIVADO*\n\n> 🔓 Ahora los miembros pueden enviar enlaces.'
     )
-  } catch (error) {
-    console.error('[ANTILINK ESTADO]', error)
-    return m.reply('> ❌ No pude cambiar el estado del antilink.')
-  }
 }
 
+// Menú y comandos
 handler.run = async (sock, m) => {
-  if (!m.isGroup) {
-    return m.reply('> ⚠️ Este comando solo funciona en grupos.')
-  }
+    const comando = (
+        m.command ||
+        m.textCommand?.split(/\s+/)[0]?.replace(/^[.!/#]+/, '') ||
+        ''
+    ).toLowerCase()
 
-  const comando = (
-    m.command ||
-    m.textCommand?.split(/\s+/)[0]?.replace(/^[.!/#]+/, '') ||
-    ''
-  ).toLowerCase()
+    switch (comando) {
+        case 'antilink_on':
+            return cambiarEstado(sock, m, true)
 
-  if (comando === 'antilink_on') {
-    return cambiarEstado(sock, m, true)
-  }
+        case 'antilink_off':
+            return cambiarEstado(sock, m, false)
 
-  if (comando === 'antilink_off') {
-    return cambiarEstado(sock, m, false)
-  }
+        default:
+            if (!m.key.remoteJid?.endsWith('@g.us')) {
+                return m.reply('> ❌ Este comando solamente funciona en grupos.')
+            }
 
-  try {
-    if (!(await esAdminUsuario(sock, m.chat, m))) {
-      return m.reply('> ❌ Solo los administradores pueden configurar el antilink.')
+            if (!(await esAdmin(sock, m))) {
+                return m.reply('> ⚠️ Solamente los administradores pueden abrir este menú.')
+            }
+
+            return mostrarMenu(sock, m)
     }
-
-    await sendButtons(
-      sock,
-      m.chat,
-      '> 🛡️ *SISTEMA ANTILINK*\n\n> ¿Qué deseas hacer?\n\n> 🟢 Encender el antilink\n> 🔴 Apagar el antilink',
-      [
-        { buttonId: '.antilink_on', buttonText: { displayText: '🟢 Encender' }, type: 1 },
-        { buttonId: '.antilink_off', buttonText: { displayText: '🔴 Apagar' }, type: 1 }
-      ],
-      { quoted: m }
-    )
-  } catch (error) {
-    console.error('[ANTILINK MENU]', error)
-    return m.reply('> ❌ No pude mostrar el menú del antilink.')
-  }
 }
 
-// Detector de enlaces: se ejecuta con TODOS los mensajes.
+// Detector global de enlaces
 handler.all = async (sock, m) => {
-  if (!m.isGroup || m.fromMe) return
+    const chat = m.key?.remoteJid
 
-  const db = cargarDB()
-  if (db[m.chat] !== true) return
+    if (!chat?.endsWith('@g.us')) return
+    if (m.fromMe || m.key?.fromMe) return
 
-  const texto = String(m.text || '')
-  if (!texto || !DETECTAR_LINK.test(texto)) return
+    const db = cargarDB()
 
-  try {
-    // Los administradores pueden enviar enlaces.
-    if (await esAdminUsuario(sock, m.chat, m)) return
+    if (db[chat] !== true) return
 
-    // El bot necesita ser administrador para borrar mensajes.
-    if (!(await esAdminBot(sock, m.chat))) return
+    const texto = m.text || ''
+    if (!contieneEnlace(texto)) return
 
-    await sock.sendMessage(m.chat, {
-      delete: m.key
-    })
+    const metadata = await sock.groupMetadata(chat).catch(() => null)
+    if (!metadata?.participants) return
 
-    await sock.sendMessage(
-      m.chat,
-      {
-        text: '> ⚠️ *SISTEMA ANTILINK*\n\n> 🚫 No puedes enviar enlaces en este grupo.\n> 👮 Respeta las reglas del grupo.',
-        contextInfo: {
-          isForwarded: true,
-          forwardingScore: 1
-        }
-      },
-      { quoted: m }
+    const id = obtenerId(m)
+
+    // Los administradores pueden enviar enlaces
+    const participante = metadata.participants.find(p =>
+        coincidenIds(p.id, id) ||
+        coincidenIds(p.lid, id)
     )
-  } catch (error) {
-    console.error('[ANTILINK DETECTOR]', error)
-  }
+
+    if (
+        participante?.admin === 'admin' ||
+        participante?.admin === 'superadmin'
+    ) return
+
+    // El bot necesita ser administrador para eliminar mensajes
+    if (!(await botEsAdmin(sock, chat, metadata))) return
+
+    try {
+        await sock.sendMessage(chat, {
+            delete: m.key
+        })
+
+        await sock.sendMessage(chat, {
+            text: '> ⚠️ *SISTEMA ANTILINK*\n\n> 🚫 No puedes enviar enlaces en este grupo.\n> 👮 Respeta las reglas del grupo.',
+            contextInfo: {
+                isForwarded: true,
+                forwardingScore: 1
+            }
+        }, {
+            quoted: m
+        })
+
+    } catch (error) {
+        console.error('[ANTILINK] Error eliminando enlace:', error.message)
+    }
 }
 
-handler.command = ['antilink', 'antilink_on', 'antilink_off']
+handler.command = [
+    'antilink',
+    'antilink_on',
+    'antilink_off'
+]
+
 handler.help = ['antilink']
 handler.tags = ['on-off']
 handler.menu = true
