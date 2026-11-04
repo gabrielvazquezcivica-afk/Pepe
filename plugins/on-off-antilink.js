@@ -202,7 +202,7 @@ handler.all = async (sock, m) => {
 
 handler.command = ['antilink', 'antilink_on', 'antilink_off']
 handler.help = ['antilink']
-handler.tags = ['grupo']
+handler.tags = ['on-off']
 handler.menu = true
 
 export default handler
