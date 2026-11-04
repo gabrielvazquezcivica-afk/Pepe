@@ -1,6 +1,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { sendButtons } from 'baileys-buttons'
 
 const DB_DIR = './database'
 const DB_FILE = path.join(DB_DIR, 'modoadmin.json')
@@ -86,7 +87,7 @@ const sistema = async (sock, from, titulo = 'Pepe Bot 🐸') => {
     }
 }
 
-handler.run = async (sock, m, args) => {
+handler.run = async (sock, m, args = []) => {
     const chat = m.key.remoteJid
 
     if (!chat?.endsWith('@g.us')) {
@@ -157,11 +158,35 @@ handler.run = async (sock, m, args) => {
         }, { quoted })
     }
 
-    return m.reply(
-        '> ⚙️ *MODO ADMIN*\n\n' +
-        '> `.modoadmin on` — Encender\n' +
-        '> `.modoadmin off` — Apagar'
-    )
+    const activo = db[chat] === true
+
+    return sendButtons(sock, chat, {
+        title: '⚙️ MODO ADMIN',
+        text: `🐸 *PEPE BOT*
+
+🔐 *Configuración del grupo*
+
+📌 Estado actual: ${activo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
+
+${activo
+    ? '👮 Solamente los administradores pueden utilizar los comandos.'
+    : '🔓 Todos los miembros pueden utilizar los comandos.'}
+
+━━━━━━━━━━━━━━━━━━
+Selecciona una opción:`,
+        footer: '🐸 PEPE BOT',
+        buttons: [
+            {
+                id: '.modoadmin on',
+                displayText: '🔒 Encender'
+            },
+            {
+                id: '.modoadmin off',
+                displayText: '🔓 Apagar'
+            }
+        ],
+        quoted: m
+    })
 }
 
 handler.command = ['modoadmin']
