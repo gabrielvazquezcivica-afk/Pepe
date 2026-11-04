@@ -1,5 +1,7 @@
+
 import fs from 'fs'
 import path from 'path'
+import { sendButtons } from 'baileys-buttons'
 
 const DB_FILE = path.resolve('./database/bienvenidas.json')
 
@@ -30,7 +32,7 @@ async function esAdmin(sock, chat, sender) {
 
 const handler = {}
 
-handler.run = async (sock, m, args) => {
+handler.run = async (sock, m, args = []) => {
   if (!m.isGroup) return m.reply('> ❌ Este comando solo funciona en grupos.')
 
   if (!(await esAdmin(sock, m.chat, m.sender))) {
@@ -38,12 +40,41 @@ handler.run = async (sock, m, args) => {
   }
 
   const opcion = args[0]?.toLowerCase()
+  const db = cargarDB()
 
   if (!['on', 'off'].includes(opcion)) {
-    return m.reply('> ⚙️ Usa:\n> .welcome on\n> .welcome off')
+    const activo = db[m.chat]?.welcome === true
+
+    return sendButtons(sock, m.chat, {
+      title: '🐸 PEPE BOT',
+      text: `╭━━━━━━━━━━━━━━━━━━╮
+┃ 🎉 *SISTEMA DE BIENVENIDAS*
+┃ 🐸 *PEPE BOT*
+╰━━━━━━━━━━━━━━━━━━╯
+
+📌 *Estado actual:* ${activo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
+
+${activo
+  ? '👋 Las bienvenidas están activadas en este grupo.'
+  : '🔕 Las bienvenidas están desactivadas en este grupo.'}
+
+━━━━━━━━━━━━━━━━━━
+Selecciona una opción:`,
+      footer: '🐸 PEPE BOT',
+      buttons: [
+        {
+          id: '.welcome on',
+          displayText: '🟢 Activar'
+        },
+        {
+          id: '.welcome off',
+          displayText: '🔴 Desactivar'
+        }
+      ],
+      quoted: m
+    })
   }
 
-  const db = cargarDB()
   db[m.chat] ??= {}
   db[m.chat].welcome = opcion === 'on'
   guardarDB(db)
