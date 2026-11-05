@@ -188,7 +188,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 }
 
 handler.command = ['vid']
-handler.help = ['vid <búsqueda>', 'vid <número>']
+handler.help = ['vid <búsqueda>']
 handler.tags = ['descargas']
 
 export default handler
