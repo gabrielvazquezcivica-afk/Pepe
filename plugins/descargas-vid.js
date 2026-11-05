@@ -1,136 +1,144 @@
 
-const pendientes = new Map()
-const conexiones = new WeakSet()
+import fs from 'node:fs'
+import path from 'node:path'
 
-const API_BUSCAR = 'https://api-faa.my.id/faa/youtube?q='
-const API_VIDEO = 'https://api-faa.my.id/faa/ytplayvid?q='
+const DB = './database'
+const ARCHIVO = path.join(DB, 'vid.json')
+const TIEMPO_EXPIRACION = 15 * 60 * 1000
 
-const REACCIONES = [
-  '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣',
-  '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'
-]
+if (!fs.existsSync(DB)) {
+  fs.mkdirSync(DB, { recursive: true })
+}
 
-function instalarReacciones(conn) {
-  if (conexiones.has(conn)) return
-  conexiones.add(conn)
+function leerPendientes() {
+  try {
+    if (!fs.existsSync(ARCHIVO)) return {}
+    return JSON.parse(fs.readFileSync(ARCHIVO, 'utf8'))
+  } catch {
+    return {}
+  }
+}
 
-  conn.ev.on('messages.reaction', async updates => {
-    const eventos = Array.isArray(updates) ? updates : [updates]
+function guardarPendientes(data) {
+  fs.writeFileSync(ARCHIVO, JSON.stringify(data, null, 2))
+}
 
-    for (const evento of eventos) {
-      try {
-        const id = evento.key?.id
-        const chat = evento.key?.remoteJid
-        const reaccion = evento.reaction?.text
+function limpiarPendientes(data) {
+  const ahora = Date.now()
 
-        if (!id || !chat || !reaccion) continue
+  for (const id in data) {
+    if (ahora - data[id].fecha > TIEMPO_EXPIRACION) {
+      delete data[id]
+    }
+  }
 
-        const clave = `${chat}_${id}`
-        const datos = pendientes.get(clave)
+  return data
+}
 
-        if (!datos || datos.procesando) continue
+function obtenerCitado(m) {
+  return m.quoted?.id ||
+    m.quoted?.key?.id ||
+    m.msg?.contextInfo?.stanzaId ||
+    m.message?.extendedTextMessage?.contextInfo?.stanzaId ||
+    null
+}
 
-        // Solo quien realizó la búsqueda puede elegir
-        const autor = evento.reaction?.key?.participant ||
-          evento.reaction?.key?.remoteJid
+const handler = async (m, { conn, text, usedPrefix, command }) => {
+  try {
+    const pendientes = limpiarPendientes(leerPendientes())
+    const citado = obtenerCitado(m)
 
-        if (autor && autor !== datos.usuario) continue
+    // Seleccionar respondiendo únicamente con un número
+    if (/^\d+$/.test(text?.trim() || '')) {
 
-        if (reaccion === '❌') {
-          pendientes.delete(clave)
+      if (!citado || !pendientes[citado]) return
 
-          await conn.sendMessage(chat, {
-            text: '> ❌ Selección cancelada.'
-          })
+      const datos = pendientes[citado]
 
-          continue
-        }
+      if (datos.usuario !== m.sender) {
+        return m.reply('> ❌ Esta búsqueda pertenece a otro usuario.')
+      }
 
-        const indice = REACCIONES.indexOf(reaccion)
+      const numero = Number(text.trim())
 
-        if (indice === -1 || !datos.resultados[indice]) continue
+      if (numero < 1 || numero > datos.resultados.length) {
+        return m.reply('> ⚠️ Número de video no válido.')
+      }
 
-        datos.procesando = true
+      const seleccionado = datos.resultados[numero - 1]
 
-        const seleccionado = datos.resultados[indice]
+      await conn.sendMessage(m.chat, {
+        react: { text: '⬇️', key: m.key }
+      })
 
-        try {
-          await conn.sendMessage(chat, {
-            text: `> ⏳ Descargando: ${seleccionado.title}`
-          })
+      let response = await fetch(
+        `https://api-faa.my.id/faa/ytplayvid?q=${encodeURIComponent(seleccionado.link)}`
+      )
 
-          const api = API_VIDEO +
-            encodeURIComponent(seleccionado.link)
+      let resultado = await response.json()
 
-          const response = await fetch(api)
-          if (!response.ok) throw new Error('Error en API de video')
+      if (!resultado.status || !resultado.result?.download_url) {
+        response = await fetch(
+          `https://api-faa.my.id/faa/ytplayvid?q=${encodeURIComponent(seleccionado.title)}`
+        )
 
-          const data = await response.json()
+        resultado = await response.json()
+      }
 
-          if (!data.status || !data.result?.download_url) {
-            throw new Error('No se pudo obtener el video')
-          }
+      if (!resultado.status || !resultado.result?.download_url) {
+        return m.reply('> ❌ No se pudo obtener el video.')
+      }
 
-          const video = data.result
+      const video = resultado.result
+      const titulo = video.searched_title || seleccionado.title
+      const enlace = video.searched_url || seleccionado.link
 
-          const caption = `
-> 🎬 *INFORMACIÓN DEL VIDEO*
+      const nombreArchivo = titulo
+        .replace(/[\\/:*?"<>|]/g, '')
+        .substring(0, 80)
 
-> 📌 Título: ${seleccionado.title}
+      const caption = `
+> 🎬 *VIDEO DESCARGADO*
+
+> 📌 Título: ${titulo}
 > 👤 Canal: ${seleccionado.channel}
 > ⏱️ Duración: ${seleccionado.duration}
-> 📁 Formato: ${video.format || 'MP4'}
-> 🔗 Enlace: ${seleccionado.link}
+> 📁 Formato: MP4
+> 🔗 Enlace: ${enlace}
 
 > 🐸 PEPE BOT
 `.trim()
 
-          await conn.sendMessage(chat, {
-            video: { url: video.download_url },
-            mimetype: 'video/mp4',
-            fileName: 'video.mp4',
-            caption
-          })
+      await conn.sendMessage(m.chat, {
+        video: { url: video.download_url },
+        mimetype: 'video/mp4',
+        fileName: `${nombreArchivo}.mp4`,
+        caption
+      }, { quoted: m })
 
-          pendientes.delete(clave)
+      delete pendientes[citado]
+      guardarPendientes(pendientes)
 
-        } catch (error) {
-          datos.procesando = false
-          console.error('[VID DESCARGA]', error)
-
-          await conn.sendMessage(chat, {
-            text: '> ❌ No se pudo descargar el video seleccionado.'
-          })
-        }
-
-      } catch (error) {
-        console.error('[VID REACTION]', error)
-      }
+      return
     }
-  })
-}
 
-const handler = async (m, { conn, text }) => {
-  try {
+    // Buscar videos
     if (!text?.trim()) {
-      return m.reply('> ⚠️ Escribe qué video quieres buscar.\n> Ejemplo: .vid IMU Jorge Cuellar')
+      return m.reply(
+        `> ⚠️ Escribe el nombre del video.\n> Ejemplo: ${usedPrefix + command} IMU Jorge Cuellar`
+      )
     }
-
-    instalarReacciones(conn)
 
     await conn.sendMessage(m.chat, {
-      react: {
-        text: '🔎',
-        key: m.key
-      }
+      react: { text: '🔎', key: m.key }
     })
 
-    const response = await fetch(
-      API_BUSCAR + encodeURIComponent(text.trim())
-    )
+    const api = `https://api-faa.my.id/faa/youtube?q=${encodeURIComponent(text.trim())}`
+
+    const response = await fetch(api)
 
     if (!response.ok) {
-      throw new Error('Error al consultar YouTube')
+      throw new Error('Error en la búsqueda')
     }
 
     const data = await response.json()
@@ -141,41 +149,38 @@ const handler = async (m, { conn, text }) => {
 
     const resultados = data.result.slice(0, 10)
 
-    let mensaje = `╭━━〔 🎬 BÚSQUEDA DE VIDEOS 〕━━╮\n`
-    mensaje += `┃\n`
-    mensaje += `┃ 🔎 Búsqueda: ${text}\n`
-    mensaje += `┃\n`
+    let mensaje = `> 🔎 RESULTADOS DE YOUTUBE\n`
+    mensaje += `> 🔍 Búsqueda: ${text}\n\n`
 
-    resultados.forEach((video, i) => {
-      mensaje += `┃ ${REACCIONES[i]} *${video.title}*\n`
-      mensaje += `┃ 👤 Canal: ${video.channel}\n`
-      mensaje += `┃ ⏱️ Duración: ${video.duration}\n`
-      mensaje += `┃ 🔗 ${video.link}\n`
-      mensaje += `┃\n`
+    resultados.forEach((video, index) => {
+      mensaje += `> *${index + 1}.* ${video.title}\n`
+      mensaje += `> 👤 Canal: ${video.channel}\n`
+      mensaje += `> ⏱️ Duración: ${video.duration}\n`
+      mensaje += `> 🔗 ${video.link}\n\n`
     })
 
-    mensaje += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
-    mensaje += `> 👆 Reacciona a ESTE mensaje con el número del video que quieres descargar.\n`
-    mensaje += `> ❌ Reacciona con ❌ para cancelar.\n`
-    mensaje += `> 🐸 PEPE BOT`
+    mensaje += '> 📥 Responde a este mensaje únicamente con el número del video que deseas descargar.\n'
+    mensaje += '> ⏳ Los resultados expiran en 15 minutos.'
 
     const enviado = await conn.sendMessage(m.chat, {
       text: mensaje
-    }, {
-      quoted: m
-    })
+    }, { quoted: m })
 
-    const clave = `${m.chat}_${enviado.key.id}`
+    if (!enviado?.key?.id) {
+      throw new Error('No se pudo guardar el mensaje de resultados')
+    }
 
-    pendientes.set(clave, {
+    pendientes[enviado.key.id] = {
       usuario: m.sender,
-      resultados,
-      procesando: false
-    })
+      fecha: Date.now(),
+      resultados
+    }
+
+    guardarPendientes(pendientes)
 
   } catch (error) {
     console.error('[VID]', error)
-    m.reply('> ❌ Ocurrió un error al buscar los videos.')
+    m.reply('> ❌ Ocurrió un error al buscar o descargar el video.')
   }
 }
 
