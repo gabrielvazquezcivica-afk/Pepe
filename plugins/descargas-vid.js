@@ -48,10 +48,13 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
     const pendientes = limpiarPendientes(leerPendientes())
     const citado = obtenerCitado(m)
 
-    // Seleccionar respondiendo únicamente con un número
+    // Elegir video respondiendo al resultado
     if (/^\d+$/.test(text?.trim() || '')) {
-
-      if (!citado || !pendientes[citado]) return
+      if (!citado || !pendientes[citado]) {
+        return m.reply(
+          '> ⚠️ Responde al mensaje de resultados con el comando .vid y el número del video.'
+        )
+      }
 
       const datos = pendientes[citado]
 
@@ -71,12 +74,14 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
         react: { text: '⬇️', key: m.key }
       })
 
+      // Obtener descarga
       let response = await fetch(
         `https://api-faa.my.id/faa/ytplayvid?q=${encodeURIComponent(seleccionado.link)}`
       )
 
       let resultado = await response.json()
 
+      // Segundo intento usando el título
       if (!resultado.status || !resultado.result?.download_url) {
         response = await fetch(
           `https://api-faa.my.id/faa/ytplayvid?q=${encodeURIComponent(seleccionado.title)}`
@@ -90,6 +95,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
       }
 
       const video = resultado.result
+
       const titulo = video.searched_title || seleccionado.title
       const enlace = video.searched_url || seleccionado.link
 
@@ -118,7 +124,6 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 
       delete pendientes[citado]
       guardarPendientes(pendientes)
-
       return
     }
 
@@ -136,10 +141,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
     const api = `https://api-faa.my.id/faa/youtube?q=${encodeURIComponent(text.trim())}`
 
     const response = await fetch(api)
-
-    if (!response.ok) {
-      throw new Error('Error en la búsqueda')
-    }
+    if (!response.ok) throw new Error('Error en la búsqueda')
 
     const data = await response.json()
 
@@ -159,7 +161,8 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
       mensaje += `> 🔗 ${video.link}\n\n`
     })
 
-    mensaje += '> 📥 Responde a este mensaje únicamente con el número del video que deseas descargar.\n'
+    mensaje += '> 📥 Para descargar, responde a este mensaje con .vid y el número del video.\n'
+    mensaje += '> Ejemplo: .vid 1\n'
     mensaje += '> ⏳ Los resultados expiran en 15 minutos.'
 
     const enviado = await conn.sendMessage(m.chat, {
@@ -185,7 +188,7 @@ const handler = async (m, { conn, text, usedPrefix, command }) => {
 }
 
 handler.command = ['vid']
-handler.help = ['vid <búsqueda>']
+handler.help = ['vid <búsqueda>', 'vid <número>']
 handler.tags = ['descargas']
 
 export default handler
