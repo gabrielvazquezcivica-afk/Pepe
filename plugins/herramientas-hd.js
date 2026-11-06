@@ -3,7 +3,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import pino from 'pino'
 
 const API = 'https://api-faa.my.id/faa/superhd?url='
-const UPLOAD_API = 'https://litterbox.catbox.moe/resources/internals/api.php'
+const UPLOAD_API = 'https://catbox.moe/user/api.php'
 
 const logger = pino({ level: 'silent' })
 const handler = {}
@@ -12,38 +12,41 @@ function desenvolverMensaje(contenido) {
     let actual = contenido
 
     while (actual) {
-        if (
+        const siguiente =
             actual.ephemeralMessage?.message ||
             actual.viewOnceMessage?.message ||
             actual.viewOnceMessageV2?.message ||
             actual.documentWithCaptionMessage?.message
-        ) {
-            actual =
-                actual.ephemeralMessage?.message ||
-                actual.viewOnceMessage?.message ||
-                actual.viewOnceMessageV2?.message ||
-                actual.documentWithCaptionMessage?.message
-            continue
-        }
 
-        break
+        if (!siguiente) break
+        actual = siguiente
     }
 
     return actual || {}
 }
 
 function obtenerImagen(contenido, profundidad = 0) {
-    if (!contenido || typeof contenido !== 'object' || profundidad > 8) {
+    if (
+        !contenido ||
+        typeof contenido !== 'object' ||
+        profundidad > 8
+    ) {
         return null
     }
 
     const mensaje = desenvolverMensaje(contenido)
 
-    if (mensaje.imageMessage) return mensaje.imageMessage
+    if (mensaje.imageMessage) {
+        return mensaje.imageMessage
+    }
 
     for (const valor of Object.values(mensaje)) {
         if (valor && typeof valor === 'object') {
-            const encontrada = obtenerImagen(valor, profundidad + 1)
+            const encontrada = obtenerImagen(
+                valor,
+                profundidad + 1
+            )
+
             if (encontrada) return encontrada
         }
     }
@@ -60,7 +63,10 @@ function obtenerFuente(m) {
     for (const citado of citados) {
         if (!citado) continue
 
-        const contenido = citado.message || citado.msg || citado
+        const contenido =
+            citado.message ||
+            citado.msg ||
+            citado
 
         if (obtenerImagen(contenido)) {
             return citado.message
@@ -72,18 +78,33 @@ function obtenerFuente(m) {
         }
     }
 
-    if (obtenerImagen(m.message)) return m
+    if (obtenerImagen(m.message)) {
+        return m
+    }
 
     return null
 }
 
+async function descargarImagen(mensaje, sock) {
+    return downloadMediaMessage(
+        mensaje,
+        'buffer',
+        {},
+        {
+            logger,
+            reuploadRequest: sock.updateMediaMessage
+        }
+    )
+}
+
 async function subirImagen(buffer, mime) {
-    const extension = mime.split('/')[1]?.split(';')[0] || 'jpg'
+    const extension =
+        mime.split('/')[1]?.split(';')[0] || 'jpg'
 
     const formulario = new FormData()
 
     formulario.append('reqtype', 'fileupload')
-    formulario.append('time', '1h')
+
     formulario.append(
         'fileToUpload',
         new Blob([buffer], { type: mime }),
@@ -93,32 +114,41 @@ async function subirImagen(buffer, mime) {
     const response = await fetch(UPLOAD_API, {
         method: 'POST',
         body: formulario,
-        signal: AbortSignal.timeout(60000)
+        headers: {
+            'User-Agent': 'PEPE-BOT'
+        },
+        signal: AbortSignal.timeout(90000)
     })
 
+    const resultado = (await response.text()).trim()
+
+    console.log('[HD] Catbox:', response.status, resultado)
+
     if (!response.ok) {
-        throw new Error('No se pudo alojar temporalmente la imagen')
+        throw new Error(
+            `Catbox respondió ${response.status}: ${resultado}`
+        )
     }
 
-    const url = (await response.text()).trim()
-
-    if (!/^https:\/\/[^\s]+$/i.test(url)) {
-        throw new Error('El alojamiento no devolvió una URL válida')
+    if (!/^https:\/\/files\.catbox\.moe\/[^\s]+$/i.test(resultado)) {
+        throw new Error(`Catbox rechazó la imagen: ${resultado}`)
     }
 
-    return url
+    return resultado
 }
 
 function buscarUrl(objeto, profundidad = 0) {
-    if (profundidad > 6 || objeto == null) return null
+    if (objeto == null || profundidad > 7) return null
 
     if (typeof objeto === 'string') {
-        return /^https?:\/\//i.test(objeto) ? objeto : null
+        return /^https?:\/\//i.test(objeto)
+            ? objeto
+            : null
     }
 
     if (typeof objeto !== 'object') return null
 
-    const preferidos = [
+    const campos = [
         'downloadUrl',
         'url',
         'image',
@@ -127,15 +157,23 @@ function buscarUrl(objeto, profundidad = 0) {
         'result'
     ]
 
-    for (const campo of preferidos) {
+    for (const campo of campos) {
         if (objeto[campo]) {
-            const encontrada = buscarUrl(objeto[campo], profundidad + 1)
+            const encontrada = buscarUrl(
+                objeto[campo],
+                profundidad + 1
+            )
+
             if (encontrada) return encontrada
         }
     }
 
     for (const valor of Object.values(objeto)) {
-        const encontrada = buscarUrl(valor, profundidad + 1)
+        const encontrada = buscarUrl(
+            valor,
+            profundidad + 1
+        )
+
         if (encontrada) return encontrada
     }
 
@@ -154,33 +192,50 @@ async function mejorarImagen(url) {
     )
 
     if (!response.ok) {
-        throw new Error(`SuperHD respondió ${response.status}`)
+        throw new Error(
+            `SuperHD respondió ${response.status}`
+        )
     }
 
-    const tipo = response.headers.get('content-type') || ''
+    const contentType =
+        response.headers.get('content-type') || ''
 
-    if (tipo.startsWith('image/')) {
+    if (contentType.startsWith('image/')) {
         return Buffer.from(await response.arrayBuffer())
     }
 
     const data = await response.json()
 
+    console.log('[HD] Respuesta SuperHD:', JSON.stringify(data).slice(0, 1500))
+
     if (data.status === false) {
-        throw new Error(data.message || 'SuperHD rechazó la imagen')
+        throw new Error(
+            data.message || 'SuperHD rechazó la imagen'
+        )
     }
 
-    const resultado = buscarUrl(data)
+    const urlResultado = buscarUrl(data)
 
-    if (resultado) {
-        const descarga = await fetch(resultado, {
+    if (urlResultado) {
+        const descarga = await fetch(urlResultado, {
             signal: AbortSignal.timeout(90000)
         })
 
         if (!descarga.ok) {
-            throw new Error('No se pudo descargar la imagen mejorada')
+            throw new Error(
+                'No se pudo descargar la imagen mejorada'
+            )
         }
 
-        return Buffer.from(await descarga.arrayBuffer())
+        const buffer = Buffer.from(
+            await descarga.arrayBuffer()
+        )
+
+        if (!buffer.length) {
+            throw new Error('La imagen HD está vacía')
+        }
+
+        return buffer
     }
 
     const base64 =
@@ -189,64 +244,73 @@ async function mejorarImagen(url) {
         data.base64
 
     if (typeof base64 === 'string') {
-        const limpio = base64.replace(/^data:image\/[^;]+;base64,/i, '')
+        const limpio = base64.replace(
+            /^data:image\/[^;]+;base64,/i,
+            ''
+        )
+
         const buffer = Buffer.from(limpio, 'base64')
 
         if (buffer.length) return buffer
     }
 
-    throw new Error('No se encontró la imagen en la respuesta de SuperHD')
+    throw new Error(
+        'No se encontró la imagen en la respuesta de SuperHD'
+    )
 }
 
 handler.run = async (sock, m) => {
     try {
         const chat = m.chat || m.key.remoteJid
+
         const fuente = obtenerFuente(m)
 
         if (!fuente) {
             return m.reply(
-                '📸 Responde a una imagen con `.hd` o envía una imagen junto al comando.'
+                '📸 *PEPE BOT — HD*\n\n' +
+                'Responde a una imagen con `.hd` o envía una imagen junto al comando.'
             )
         }
 
         const datosImagen = obtenerImagen(fuente.message)
 
+        if (!datosImagen) {
+            return m.reply('❌ No pude reconocer la imagen.')
+        }
+
+        // Reacción
         await sock.sendMessage(chat, {
             react: {
                 text: '✨',
                 key: m.key
             }
-        })
+        }).catch(() => {})
 
-        const buffer = await downloadMediaMessage(
-            fuente,
-            'buffer',
-            {},
-            {
-                logger,
-                reuploadRequest: sock.updateMediaMessage
-            }
-        )
+        // Descargar imagen original
+        const buffer = await descargarImagen(fuente, sock)
 
         if (!buffer?.length) {
             throw new Error('No se pudo descargar la imagen original')
         }
 
-        const mime = datosImagen?.mimetype || 'image/jpeg'
+        const mime = datosImagen.mimetype || 'image/jpeg'
 
-        // Subida temporal automática.
-        const urlTemporal = await subirImagen(buffer, mime)
+        // Subir automáticamente a Catbox
+        const url = await subirImagen(buffer, mime)
 
-        // Procesamiento mediante SuperHD.
-        const imagenFinal = await mejorarImagen(urlTemporal)
+        // Mejorar imagen con SuperHD
+        const imagenFinal = await mejorarImagen(url)
 
+        // Enviar resultado
         await sock.sendMessage(
             chat,
             {
                 image: imagenFinal,
                 caption: '> 🖼️ Imagen mejorada'
             },
-            { quoted: m }
+            {
+                quoted: m
+            }
         )
 
     } catch (error) {
