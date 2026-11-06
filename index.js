@@ -560,7 +560,9 @@ function isOwnerMessage(sender) {
 // Buscar el mensaje citado dentro de la estructura de Baileys
 function obtenerMensajeCitado(message, chat, sender) {
     function buscarContextInfo(obj, profundidad = 0) {
-        if (!obj || typeof obj !== 'object' || profundidad > 8) return null
+        if (!obj || typeof obj !== 'object' || profundidad > 8) {
+            return null
+        }
 
         if (obj.contextInfo?.quotedMessage) {
             return obj.contextInfo
@@ -568,7 +570,11 @@ function obtenerMensajeCitado(message, chat, sender) {
 
         for (const valor of Object.values(obj)) {
             if (valor && typeof valor === 'object') {
-                const encontrado = buscarContextInfo(valor, profundidad + 1)
+                const encontrado = buscarContextInfo(
+                    valor,
+                    profundidad + 1
+                )
+
                 if (encontrado) return encontrado
             }
         }
@@ -576,28 +582,21 @@ function obtenerMensajeCitado(message, chat, sender) {
         return null
     }
 
-    const contenido = message.message
-    const contexto = buscarContextInfo(contenido)
+    const contexto = buscarContextInfo(message.message)
 
-    if (!contexto?.quotedMessage) return null
+    if (!contexto?.quotedMessage || !contexto.stanzaId) {
+        return null
+    }
 
-    const id = contexto.stanzaId
-    const participante = contexto.participant || sender
-
-    if (!id) return null
-
-    // Crear un mensaje con la estructura que Baileys necesita
-    const citado = {
+    return {
         key: {
-            remoteJid: chat,
-            id,
-            participant: participante,
+            remoteJid: contexto.remoteJid || chat,
+            id: contexto.stanzaId,
+            participant: contexto.participant || sender,
             fromMe: false
         },
         message: contexto.quotedMessage
     }
-
-    return citado
 }
 
 // Normalizar mensajes
@@ -605,6 +604,12 @@ function obtenerMensajeCitado(message, chat, sender) {
 function normalizeMessage(message, sock) {
     const chat = message.key.remoteJid
     const sender = message.key.participant || chat
+
+    const citado = obtenerMensajeCitado(
+        message,
+        chat,
+        sender
+    )
 
     return {
         ...message,
@@ -618,6 +623,10 @@ function normalizeMessage(message, sock) {
         botName: config.BOT_NAME,
         ownerName: config.OWNER_NAME,
         text: getMessageText(message),
+
+        // Mensaje citado para los plugins
+        quoted: citado,
+
         reply: (text, options = {}) =>
             sock.sendMessage(
                 chat,
