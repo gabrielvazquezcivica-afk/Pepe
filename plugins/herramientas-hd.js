@@ -2,7 +2,7 @@
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import pino from 'pino'
 
-const API = 'https://api-faa.my.id/faa/hdv4?image='
+const API = 'https://api-faa.my.id/faa/superhd?url='
 const logger = pino({ level: 'silent' })
 
 const handler = {}
@@ -50,8 +50,8 @@ function obtenerImagen(contenido, profundidad = 0) {
 
     for (const valor of Object.values(mensaje)) {
         if (valor && typeof valor === 'object') {
-            const encontrado = obtenerImagen(valor, profundidad + 1)
-            if (encontrado) return encontrado
+            const encontrada = obtenerImagen(valor, profundidad + 1)
+            if (encontrada) return encontrada
         }
     }
 
@@ -59,7 +59,6 @@ function obtenerImagen(contenido, profundidad = 0) {
 }
 
 function obtenerFuente(m) {
-    // Primero revisamos la imagen citada.
     const citados = [
         m.quoted?.fakeObj,
         m.quoted
@@ -71,17 +70,15 @@ function obtenerFuente(m) {
         const contenido = citado.message || citado.msg || citado
 
         if (obtenerImagen(contenido)) {
-            // downloadMediaMessage necesita un mensaje completo.
-            if (citado.message) return citado
-
-            return {
-                key: citado.key || m.key,
-                message: contenido
-            }
+            return citado.message
+                ? citado
+                : {
+                    key: citado.key || m.key,
+                    message: contenido
+                }
         }
     }
 
-    // Si no hay imagen citada, revisamos el mensaje actual.
     if (obtenerImagen(m.message)) {
         return m
     }
@@ -89,27 +86,23 @@ function obtenerFuente(m) {
     return null
 }
 
-async function descargarImagen(mensaje) {
+async function descargarImagen(mensaje, sock) {
     return downloadMediaMessage(
         mensaje,
         'buffer',
         {},
         {
             logger,
-            reuploadRequest: async msg =>
-                await sockActual.updateMediaMessage(msg)
+            reuploadRequest: sock.updateMediaMessage
         }
     )
 }
 
-let sockActual = null
-
 async function mejorarImagen(buffer, mime) {
-    const base64 = buffer.toString('base64')
-    const imagenData = `data:${mime};base64,${base64}`
+    const dataURL = `data:${mime};base64,${buffer.toString('base64')}`
 
     const response = await fetch(
-        API + encodeURIComponent(imagenData),
+        API + encodeURIComponent(dataURL),
         {
             headers: {
                 'User-Agent': 'Mozilla/5.0'
@@ -132,6 +125,7 @@ async function mejorarImagen(buffer, mime) {
         data.result?.downloadUrl ||
         data.result?.url ||
         data.result?.image ||
+        data.result?.img ||
         data.result?.base64 ||
         data.downloadUrl ||
         data.url ||
@@ -153,12 +147,12 @@ async function mejorarImagen(buffer, mime) {
         return Buffer.from(await descarga.arrayBuffer())
     }
 
-    const base64Resultado = resultado.replace(
+    const base64 = resultado.replace(
         /^data:image\/[^;]+;base64,/i,
         ''
     )
 
-    const imagen = Buffer.from(base64Resultado, 'base64')
+    const imagen = Buffer.from(base64, 'base64')
 
     if (!imagen.length) {
         throw new Error('La imagen recibida está vacía')
@@ -174,31 +168,25 @@ handler.run = async (sock, m) => {
 
         if (!fuente) {
             return m.reply(
-                '🐸 *PEPE BOT — HD*\n\n' +
-                '📸 No encontré ninguna imagen.\n\n' +
-                'Puedes:\n' +
-                '• Enviar una imagen con el comando `.hd`.\n' +
-                '• Responder directamente a una imagen con `.hd`.'
+                '📸 Responde a una imagen con `.hd` o envía una imagen junto al comando.'
             )
         }
 
         const datosImagen = obtenerImagen(fuente.message)
 
         if (!datosImagen) {
-            return m.reply('❌ No pude identificar la imagen.')
+            return m.reply('❌ No pude reconocer la imagen.')
         }
 
-        await m.reply('✨ Mejorando imagen a HD, espera un momento...')
-
-        const buffer = await downloadMediaMessage(
-            fuente,
-            'buffer',
-            {},
-            {
-                logger,
-                reuploadRequest: sock.updateMediaMessage
+        // Reacción sin enviar mensaje de espera.
+        await sock.sendMessage(chat, {
+            react: {
+                text: '✨',
+                key: m.key
             }
-        )
+        })
+
+        const buffer = await descargarImagen(fuente, sock)
 
         if (!buffer?.length) {
             throw new Error('No se pudo descargar la imagen original')
@@ -206,23 +194,24 @@ handler.run = async (sock, m) => {
 
         const mime = datosImagen.mimetype || 'image/jpeg'
 
-        const imagenFinal = await mejorarImagen(buffer, mime)
+        const resultado = await mejorarImagen(buffer, mime)
 
         await sock.sendMessage(
             chat,
             {
-                image: imagenFinal,
-                caption: '✨ *IMAGEN MEJORADA A HD*\n\n🐸 PEPE BOT'
+                image: resultado,
+                caption: '> 🖼️ Imagen mejorada'
             },
-            { quoted: m }
+            {
+                quoted: m
+            }
         )
 
     } catch (error) {
         console.error('[HD] Error:', error)
 
         await m.reply(
-            '❌ No se pudo mejorar la imagen.\n\n' +
-            `⚠️ ${error.message || 'Error desconocido'}`
+            `❌ No se pudo mejorar la imagen.\n\n> ${error.message || 'Error desconocido'}`
         )
     }
 }
