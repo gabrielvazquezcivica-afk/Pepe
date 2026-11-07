@@ -131,7 +131,7 @@ handler.run = async (sock, m) => {
 
 handler.command = ['nsfw', 'nsfw-on', 'nsfw-off']
 handler.help = ['nsfw']
-handler.tags = ['nsfw']
+handler.tags = ['on-off']
 handler.menu = true
 
 export default handler
