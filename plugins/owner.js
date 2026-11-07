@@ -26,17 +26,7 @@ END:VCARD`
             contacts: [{ vcard }]
         }
     }, { quoted: m })
-
-    await sock.sendMessage(from, {
-        text:
-`╭━━━〔 👑 OWNER 👑 〕━━━⬣
-┃
-┃ 📞 Contacto del creador
-┃ 👑 ${config.OWNER_NAME}
-┃
-┃ 🐸 ${config.BOT_NAME}
-╰━━━━━━━━━━━━━━━━━━⬣`
-    }, { quoted: m })
+      
 }
 
 handler.command = ['owner', 'creador']
