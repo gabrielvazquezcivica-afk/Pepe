@@ -10,7 +10,7 @@ handler.run = async (sock, m) => {
 
     if (!from.endsWith('@g.us')) {
         return sock.sendMessage(from, {
-            text: '`🌊 Este comando solo funciona en grupos`'
+            text: '> Este comando solo funciona en grupos.'
         }, { quoted: m })
     }
 
