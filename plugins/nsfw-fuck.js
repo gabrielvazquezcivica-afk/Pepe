@@ -100,7 +100,7 @@ handler.run = async (sock, m) => {
         gifPlayback: true,
         caption: `🥵 *¡QUÉ MOMENTO!*
 
-@${name1} está cogiendo con @${name2} 🥵`,
+> @${name1} está cogiendo con @${name2} 🥵`,
         mentions: [sender, target]
     }, { quoted: m })
 }
