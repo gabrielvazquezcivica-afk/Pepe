@@ -51,7 +51,10 @@ handler.run = async (sock, m, args = []) => {
         url.searchParams.set('query', query)
 
         const response = await fetch(url)
-        const json = await response.json()
+const contenido = await response.text()
+
+console.log('[VIDEOS] Estado HTTP:', response.status)
+console.log('[VIDEOS] Respuesta:', contenido.slice(0, 1000))
 
         if (!response.ok || !json.status) {
             return m.reply('> ❌ No se encontraron resultados.')
