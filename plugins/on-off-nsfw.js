@@ -1,39 +1,65 @@
-import fs from 'fs'
-import path from 'path'
+
+import fs from 'node:fs'
+import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
 
 const DB_FILE = path.resolve('./database/nsfw.json')
 
 function cargarDB() {
-    try {
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
-    } catch {
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true })
+
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, '{}', 'utf8')
         return {}
+    }
+
+    try {
+        const contenido = fs.readFileSync(DB_FILE, 'utf8')
+        const db = JSON.parse(contenido || '{}')
+
+        if (!db || typeof db !== 'object' || Array.isArray(db)) {
+            throw new Error('Formato JSON incorrecto')
+        }
+
+        return db
+    } catch (error) {
+        console.error('[NSFW] Error leyendo la base de datos:', error)
+        throw error
     }
 }
 
 function guardarDB(db) {
     fs.mkdirSync(path.dirname(DB_FILE), { recursive: true })
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+
+    fs.writeFileSync(
+        DB_FILE,
+        JSON.stringify(db, null, 2),
+        'utf8'
+    )
 }
 
 async function esAdmin(sock, chat, sender) {
-    const metadata = await sock.groupMetadata(chat)
+    try {
+        const metadata = await sock.groupMetadata(chat)
 
-    const normalizar = jid =>
-        String(jid || '').replace(/:\d+@/, '@')
+        const normalizar = jid =>
+            String(jid || '').replace(/:\d+@/, '@')
 
-    const ids = [sender, globalThis?.senderLid]
-        .filter(Boolean)
-        .map(normalizar)
-
-    const participante = metadata.participants.find(p =>
-        [p.id, p.jid, p.lid]
+        const ids = [sender, globalThis?.senderLid]
             .filter(Boolean)
-            .some(id => ids.includes(normalizar(id)))
-    )
+            .map(normalizar)
 
-    return ['admin', 'superadmin'].includes(participante?.admin)
+        const participante = metadata.participants.find(p =>
+            [p.id, p.jid, p.lid]
+                .filter(Boolean)
+                .some(id => ids.includes(normalizar(id)))
+        )
+
+        return ['admin', 'superadmin'].includes(participante?.admin)
+    } catch (error) {
+        console.error('[NSFW] Error comprobando administrador:', error)
+        return false
+    }
 }
 
 const handler = {}
@@ -47,8 +73,15 @@ handler.run = async (sock, m, args = []) => {
         return m.reply('> ⛔ Solo los administradores pueden usar este comando.')
     }
 
+    let db
+
+    try {
+        db = cargarDB()
+    } catch {
+        return m.reply('> ❌ No se pudo leer la base de datos NSFW. Revisa el archivo JSON.')
+    }
+
     const opcion = args[0]?.toLowerCase()
-    const db = cargarDB()
 
     // Mostrar panel
     if (!['on', 'off'].includes(opcion)) {
@@ -85,14 +118,19 @@ Selecciona una opción:`,
         })
     }
 
-    // Crear configuración si no existe
+    // Crear configuración del grupo
     db[m.chat] ??= {}
 
     // Guardar estado
     db[m.chat].bloqueado = opcion === 'off'
     db[m.chat].actualizado = Date.now()
 
-    guardarDB(db)
+    try {
+        guardarDB(db)
+    } catch (error) {
+        console.error('[NSFW] Error guardando configuración:', error)
+        return m.reply('> ❌ No se pudo guardar la configuración NSFW.')
+    }
 
     return m.reply(
         opcion === 'on'
