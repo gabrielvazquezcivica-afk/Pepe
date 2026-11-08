@@ -5,8 +5,8 @@ import config from '../config.js'
 const DB_FILE = path.resolve('./database/nsfw.json')
 
 // Configura aquí una API de búsqueda de videos no explícitos.
-const API_URL = 'URL_DE_TU_API'
-const API_KEY = 'TU_API_KEY'
+const API_URL = 'https://api.evogb.org/beta#nsfw-search-xvideos'
+const API_KEY = 'evogb-R1Mofv5G'
 
 const handler = {}
 
