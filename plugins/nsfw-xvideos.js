@@ -4,13 +4,14 @@ import config from '../config.js'
 
 const DB_FILE = path.resolve('./database/nsfw.json')
 
-// Configura aquí una API de búsqueda de videos no explícitos.
+// Sustituye por el endpoint de una API de videos no explícitos.
 const API_URL = 'https://api.evogb.org/beta#nsfw-search-xvideos'
-const API_KEY = 'evogb-R1Mofv5G'
+
+const API_KEY = evogb-R1Mofv5G'
 
 const handler = {}
 
-function cargarNSFW() {
+function cargarDB() {
     try {
         return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
     } catch {
@@ -19,16 +20,16 @@ function cargarNSFW() {
 }
 
 handler.run = async (sock, m, args = []) => {
-    const from = m.chat
+    const chat = m.chat
     const query = args.join(' ').trim()
 
     // Protección NSFW
     if (m.isGroup) {
-        const nsfw = cargarNSFW()
+        const db = cargarDB()
 
-        if (nsfw[from]?.bloqueado !== false) {
+        if (db[chat]?.bloqueado !== false) {
             return m.reply(
-                `> 🔒 Los comandos están bloqueados en este grupo.\n\n` +
+                `> 🔒 Los comandos NSFW están bloqueados en este grupo.\n\n` +
                 `> Un administrador puede activarlos con .nsfw on\n\n` +
                 `> ${config.BOT_NAME}`
             )
@@ -37,48 +38,41 @@ handler.run = async (sock, m, args = []) => {
 
     if (!query) {
         return m.reply(
-            '> 🔎 Escribe qué video quieres buscar.\n\n' +
+            '> 🔎 Escribe el nombre del video que quieres buscar.\n\n' +
             '> Ejemplo: .videos anime'
         )
     }
 
     try {
-        const url = new URL(API_URL)
-
-        url.searchParams.set('key', API_KEY)
-        url.searchParams.set('query', query)
-
-        await sock.sendMessage(from, {
+        await sock.sendMessage(chat, {
             react: {
                 text: '🔎',
                 key: m.key
             }
         })
 
-        const response = await fetch(url)
-        const contenido = await response.text()
+        const url = new URL(API_URL)
+        url.searchParams.set('key', API_KEY)
+        url.searchParams.set('query', query)
 
-        console.log('[VIDEOS] HTTP:', response.status)
+        const response = await fetch(url)
+        const content = await response.text()
 
         let json
 
         try {
-            json = JSON.parse(contenido)
+            json = JSON.parse(content)
         } catch {
-            console.error(
-                '[VIDEOS] Respuesta no JSON:',
-                contenido.slice(0, 500)
-            )
+            console.error('[VIDEOS] Respuesta inválida:', content.slice(0, 500))
 
             return m.reply(
-                '> ❌ El servidor devolvió HTML o una respuesta no válida.\n\n' +
-                '> Comprueba la protección y la dirección de la API.'
+                '> ❌ El servidor no devolvió JSON válido.'
             )
         }
 
         if (!response.ok || json.status !== true) {
             return m.reply(
-                '> ❌ La API no pudo completar la búsqueda.'
+                '> ❌ No se pudo realizar la búsqueda.'
             )
         }
 
@@ -86,7 +80,7 @@ handler.run = async (sock, m, args = []) => {
 
         if (!resultado) {
             return m.reply(
-                '> ❌ La API no devolvió resultados.'
+                '> ❌ No se encontraron resultados.'
             )
         }
 
