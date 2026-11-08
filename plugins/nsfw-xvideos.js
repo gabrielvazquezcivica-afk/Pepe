@@ -1,13 +1,10 @@
 import fs from 'fs'
-import path from 'path'
+import path from 'node:path'
 import config from '../config.js'
 
 const DB_FILE = path.resolve('./database/nsfw.json')
-
-// Sustituye por el endpoint de una API de videos no explícitos.
-const API_URL = 'https://api.evogb.org/beta#nsfw-search-xvideos'
-
-const API_KEY = evogb-R1Mofv5G'
+const API_URL = 'https://api.stellarwa.xyz/nsfw/search/xnxx?key=api-hbWMB'
+const API_KEY = 'api-hbWMB'
 
 const handler = {}
 
@@ -29,7 +26,7 @@ handler.run = async (sock, m, args = []) => {
 
         if (db[chat]?.bloqueado !== false) {
             return m.reply(
-                `> 🔒 Los comandos NSFW están bloqueados en este grupo.\n\n` +
+                `> 🔒 Los comandos están bloqueados en este grupo.\n\n` +
                 `> Un administrador puede activarlos con .nsfw on\n\n` +
                 `> ${config.BOT_NAME}`
             )
@@ -38,22 +35,15 @@ handler.run = async (sock, m, args = []) => {
 
     if (!query) {
         return m.reply(
-            '> 🔎 Escribe el nombre del video que quieres buscar.\n\n' +
+            '> 🔎 Escribe qué video quieres buscar.\n\n' +
             '> Ejemplo: .videos anime'
         )
     }
 
     try {
-        await sock.sendMessage(chat, {
-            react: {
-                text: '🔎',
-                key: m.key
-            }
-        })
-
         const url = new URL(API_URL)
-        url.searchParams.set('key', API_KEY)
         url.searchParams.set('query', query)
+        url.searchParams.set('key', API_KEY)
 
         const response = await fetch(url)
         const content = await response.text()
@@ -63,44 +53,37 @@ handler.run = async (sock, m, args = []) => {
         try {
             json = JSON.parse(content)
         } catch {
-            console.error('[VIDEOS] Respuesta inválida:', content.slice(0, 500))
-
-            return m.reply(
-                '> ❌ El servidor no devolvió JSON válido.'
-            )
+            console.error('[VIDEOS] Respuesta no JSON:', content.slice(0, 500))
+            return m.reply('> ❌ El servidor no devolvió JSON válido.')
         }
 
         if (!response.ok || json.status !== true) {
-            return m.reply(
-                '> ❌ No se pudo realizar la búsqueda.'
-            )
+            return m.reply('> ❌ No se pudo realizar la búsqueda.')
         }
 
-        const resultado = json.data?.result
+        const resultados = json.resultados || []
 
-        if (!resultado) {
-            return m.reply(
-                '> ❌ No se encontraron resultados.'
-            )
+        if (!resultados.length) {
+            return m.reply('> ❌ No se encontraron resultados.')
         }
 
-        const texto = typeof resultado === 'string'
-            ? resultado
-            : JSON.stringify(resultado, null, 2)
+        const texto = resultados.slice(0, 5).map((item, i) => {
+            return `${i + 1}. *${item.title || 'Sin título'}*
+👁️ Visitas: ${item.views || 'N/D'}
+🎞️ Calidad: ${item.resolution || 'N/D'}
+⏱️ Duración: ${item.duration || 'N/D'}`
+        }).join('\n\n')
 
         return m.reply(
             `🐸 *PEPE BOT — VIDEOS*\n\n` +
-            `🔎 *Búsqueda:* ${query}\n\n` +
+            `🔎 Búsqueda: ${query}\n\n` +
             `${texto}\n\n` +
             `> ${config.BOT_NAME}`
         )
 
     } catch (error) {
         console.error('[VIDEOS]', error)
-
-        return m.reply(
-            '> ❌ Error al conectar con el servidor.'
-        )
+        return m.reply('> ❌ Error al conectar con la API.')
     }
 }
 
