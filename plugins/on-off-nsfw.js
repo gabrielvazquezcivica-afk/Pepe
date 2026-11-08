@@ -1,20 +1,10 @@
-
-import fs from 'node:fs'
-import path from 'node:path'
+import fs from 'fs'
+import path from 'path'
 import { sendButtons } from 'baileys-buttons'
 
-const DB_DIR = './database'
-const DB_FILE = path.join(DB_DIR, 'nsfw.json')
-
-const handler = {}
+const DB_FILE = path.resolve('./database/nsfw.json')
 
 function cargarDB() {
-    fs.mkdirSync(DB_DIR, { recursive: true })
-
-    if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, '{}')
-    }
-
     try {
         return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
     } catch {
@@ -23,116 +13,98 @@ function cargarDB() {
 }
 
 function guardarDB(db) {
-    fs.mkdirSync(DB_DIR, { recursive: true })
-    const tmp = `${DB_FILE}.tmp`
-    fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
-    fs.renameSync(tmp, DB_FILE)
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true })
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
 }
 
-async function esAdmin(sock, m) {
-    if (!m.isGroup) return false
-    if (m.isAdmin === true) return true
+async function esAdmin(sock, chat, sender) {
+    const metadata = await sock.groupMetadata(chat)
 
-    try {
-        const metadata = await sock.groupMetadata(m.chat)
-        const id = m.sender
+    const normalizar = jid =>
+        String(jid || '').replace(/:\d+@/, '@')
 
-        const normalizar = jid =>
-            String(jid || '').replace(/:\d+@/, '@')
+    const ids = [sender, globalThis?.senderLid]
+        .filter(Boolean)
+        .map(normalizar)
 
-        const participante = metadata.participants.find(p =>
-            [p.id, p.jid, p.lid].filter(Boolean)
-                .some(jid => normalizar(jid) === normalizar(id))
-        )
+    const participante = metadata.participants.find(p =>
+        [p.id, p.jid, p.lid]
+            .filter(Boolean)
+            .some(id => ids.includes(normalizar(id)))
+    )
 
-        return Boolean(
-            participante?.admin === 'admin' ||
-            participante?.admin === 'superadmin'
-        )
-    } catch (error) {
-        console.error('[NSFW] Error:', error.message)
-        return false
-    }
+    return ['admin', 'superadmin'].includes(participante?.admin)
 }
 
-function estado(chat) {
-    return cargarDB()[chat]?.bloqueado ?? true
-}
+const handler = {}
 
-async function panel(sock, m) {
-    const bloqueado = estado(m.chat)
-
-    await sendButtons(sock, m.chat, {
-        title: '🐸 PEPE BOT • CONTROL NSFW',
-        text: `╭━━━━━━━━━━━━━━━━━━╮
-┃ ⚙️ *CONFIGURACIÓN NSFW*
-╰━━━━━━━━━━━━━━━━━━╯
-
-Estado: ${bloqueado ? '🔒 BLOQUEADO' : '🔓 PERMITIDO'}
-
-${bloqueado
-    ? 'Los comandos +18 están bloqueados para todos los miembros.'
-    : 'El bloqueo está desactivado para los comandos clasificados como +18.'}
-
-👑 Solo administradores pueden cambiarlo.`,
-        footer: '🐸 PEPE BOT',
-        buttons: [
-            {
-                id: '.nsfw-on',
-                displayText: '🔒 Bloquear +18'
-            },
-            {
-                id: '.nsfw-off',
-                displayText: '🔓 Permitir +18'
-            }
-        ],
-        quoted: m
-    })
-}
-
-async function cambiar(sock, m, bloqueado) {
+handler.run = async (sock, m, args = []) => {
     if (!m.isGroup) {
-        return m.reply('❌ Solo funciona en grupos.')
+        return m.reply('> ❌ Este comando solo funciona en grupos.')
     }
 
-    if (!(await esAdmin(sock, m))) {
-        return m.reply('⚠️ Solo los administradores pueden cambiar esta configuración.')
+    if (!(await esAdmin(sock, m.chat, m.sender))) {
+        return m.reply('> ⛔ Solo los administradores pueden usar este comando.')
     }
 
+    const opcion = args[0]?.toLowerCase()
     const db = cargarDB()
 
-    db[m.chat] = {
-        bloqueado,
-        actualizado: Date.now()
+    // Mostrar panel
+    if (!['on', 'off'].includes(opcion)) {
+        const bloqueado = db[m.chat]?.bloqueado !== false
+        const activo = !bloqueado
+
+        return sendButtons(sock, m.chat, {
+            title: '🐸 PEPE BOT',
+            text: `╭━━━━━━━━━━━━━━━━━━╮
+┃ 🔞 *CONTROL NSFW*
+┃ 🐸 *PEPE BOT*
+╰━━━━━━━━━━━━━━━━━━╯
+
+📌 *Estado actual:* ${activo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
+
+${activo
+    ? '🔓 Los comandos NSFW están permitidos en este grupo.'
+    : '🔒 Los comandos NSFW están bloqueados en este grupo.'}
+
+━━━━━━━━━━━━━━━━━━
+Selecciona una opción:`,
+            footer: '🐸 PEPE BOT',
+            buttons: [
+                {
+                    id: '.nsfw on',
+                    displayText: '🟢 Encender'
+                },
+                {
+                    id: '.nsfw off',
+                    displayText: '🔴 Apagar'
+                }
+            ],
+            quoted: m
+        })
     }
+
+    // Crear configuración si no existe
+    db[m.chat] ??= {}
+
+    // Guardar estado
+    db[m.chat].bloqueado = opcion === 'off'
+    db[m.chat].actualizado = Date.now()
 
     guardarDB(db)
 
-    await panel(sock, m)
+    return m.reply(
+        opcion === 'on'
+            ? '> ✅ NSFW encendido. Los comandos están permitidos en este grupo.'
+            : '> 🔒 NSFW apagado. Los comandos están bloqueados en este grupo.'
+    )
 }
 
-handler.run = async (sock, m) => {
-    const comando = (
-        m.command ||
-        m.textCommand?.split(/\s+/)[0]?.replace(/^[.!/#]+/, '') ||
-        ''
-    ).toLowerCase()
-
-    if (comando === 'nsfw-on') {
-        return cambiar(sock, m, true)
-    }
-
-    if (comando === 'nsfw-off') {
-        return cambiar(sock, m, false)
-    }
-
-    return panel(sock, m)
-}
-
-handler.command = ['nsfw', 'nsfw-on', 'nsfw-off']
+handler.command = ['nsfw']
 handler.help = ['nsfw']
 handler.tags = ['on-off']
+handler.group = true
 handler.menu = true
 
 export default handler
-
