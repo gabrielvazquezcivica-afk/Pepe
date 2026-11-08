@@ -81,7 +81,7 @@ handler.run = async (sock, m, args = []) => {
 
 handler.command = ['videos']
 handler.help = ['videos <búsqueda>']
-handler.tags = ['buscador']
+handler.tags = ['nsfw']
 handler.menu = true
 
 export default handler
