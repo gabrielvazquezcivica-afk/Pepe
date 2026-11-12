@@ -33,7 +33,7 @@ await m.reply(
 
 handler.command = ['uptime', 'up']
 handler.help = ['uptime']
-handler.tags = ['información']
+handler.tags = ['informacion']
 handler.menu = true
 
 export default handler
