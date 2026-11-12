@@ -801,7 +801,10 @@ function esComandoFreeFire(handler) {
         String(tag).toLowerCase().replace(/[\s_-]/g, '')
     )
 
-    return tags.includes('freefire') || tags.includes('ff')
+    return tags.includes('freefire') ||
+       tags.includes('ff') ||
+       tags.includes('owner') ||
+       tags.includes('grupo')
 }
 
 
