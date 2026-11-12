@@ -14,6 +14,20 @@ import { instalarBienvenidas } from './lib/bienvenidas.js'
 
 // Configuración
 const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
+// Fijar la carpeta raíz del proyecto
+process.chdir(BASE_DIR)
+
+// Carpeta única de bases de datos
+const DATABASE_DIR = path.join(BASE_DIR, 'database')
+
+// Asegurar que exista
+fs.mkdirSync(DATABASE_DIR, { recursive: true })
+
+console.log(
+    chalk.green('📂 Base de datos persistente:'),
+    DATABASE_DIR
+)
+
 const PLUGINS_DIR = path.join(BASE_DIR, 'plugins')
 const logger = pino({ level: 'silent' })
 
