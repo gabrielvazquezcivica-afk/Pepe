@@ -3,7 +3,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { sendButtons } from 'baileys-buttons'
 
-const DB_DIR = './database'
+import { fileURLToPath } from 'node:url'
+
+const BASE_DIR = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..'
+)
+
+const DB_DIR = path.join(BASE_DIR, 'database')
 const DB_FILE = path.join(DB_DIR, 'modoadmin.json')
 
 const handler = {}
