@@ -767,7 +767,8 @@ function leerModoAdmin() {
 
         const contenido = fs.readFileSync(modoAdminPath, 'utf8')
         return contenido.trim() ? JSON.parse(contenido) : {}
-    } catch {
+    } catch (error) {
+        console.error('[MODO ADMIN] Error leyendo archivo:', error)
         return {}
     }
 }
