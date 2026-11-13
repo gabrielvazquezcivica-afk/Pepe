@@ -1,6 +1,9 @@
 
 const handler = {}
 
+const API_URL = 'https://api.stellarwa.xyz/sfw/interaction'
+const API_KEY = 'api-hbWMB'
+
 const interacciones = {
     abrazar: {
         api: 'hug',
@@ -12,7 +15,7 @@ const interacciones = {
     },
     acariciar: {
         api: 'pat',
-        texto: (a, b) => `> 🫳 @${a} acarició a @${b}`
+        texto: (a, b) => `> @${a} acarició a @${b}`
     },
     sonreir: {
         api: 'smile',
@@ -27,8 +30,8 @@ const interacciones = {
         texto: (a, b) => `> 🙌 @${a} chocó los cinco con @${b}`
     },
     animar: {
-        api: 'cheer',
-        texto: (a, b) => `> 🎊 @${a} animó a @${b}`
+        api: 'celebrate',
+        texto: (a, b) => `> 🎉 @${a} animó a @${b}`
     },
     bailar: {
         api: 'dance',
@@ -49,6 +52,50 @@ const interacciones = {
     dormir: {
         api: 'sleep',
         texto: (a, b) => `> 😴 @${a} se quedó dormido`
+    },
+    aplaudir: {
+        api: 'clap',
+        texto: (a, b) => `> 👏 @${a} está aplaudiendo a @${b}`
+    },
+    saltar: {
+        api: 'jump',
+        texto: (a, b) => `> @${a} está saltando`
+    },
+    caminar: {
+        api: 'walk',
+        texto: (a, b) => `> @${a} está caminando`
+    },
+    bostezar: {
+        api: 'yawn',
+        texto: (a, b) => `> @${a} está bostezando`
+    },
+    estudiar: {
+        api: 'study',
+        texto: (a, b) => `> 📚 @${a} está estudiando`
+    },
+    cocinar: {
+        api: 'cook',
+        texto: (a, b) => `> 🍳 @${a} está cocinando`
+    },
+    saludar2: {
+        api: 'salute',
+        texto: (a, b) => `> @${a} saludó`
+    },
+    celebrar: {
+        api: 'celebrate',
+        texto: (a, b) => `> 🎊 @${a} está celebrando`
+    },
+    proteger: {
+        api: 'protect',
+        texto: (a, b) => `> 🛡️ @${a} está protegiendo a @${b}`
+    },
+    disculparse: {
+        api: 'apologize',
+        texto: (a, b) => `> @${a} se disculpó con @${b}`
+    },
+    chocarpuños: {
+        api: 'fistbump',
+        texto: (a, b) => `> @${a} chocó puños con @${b}`
     }
 }
 
@@ -63,68 +110,83 @@ handler.run = async (sock, m, args = []) => {
         const menciones = contexto?.mentionedJid || m.mentionedJid || []
         const citado = m.quoted || null
 
-        const persona1 =
+        const individuales = [
+            'llorar', 'pensar', 'dormir', 'saltar',
+            'caminar', 'bostezar', 'estudiar',
+            'cocinar', 'saludar2', 'celebrar'
+        ]
+
+        let persona1 =
             menciones[0] ||
             citado?.sender ||
             citado?.key?.participant ||
             citado?.key?.participantAlt ||
             null
 
-        const persona2 = persona1 ? m.sender : null
-
-        const accionesIndividuales = [
-            'llorar',
-            'pensar',
-            'dormir'
-        ]
-
-        if (!persona1 && !accionesIndividuales.includes(comando)) {
+        if (!persona1 && !individuales.includes(comando)) {
             return m.reply(
                 `> ❌ Menciona a alguien o responde a su mensaje.\n\n` +
                 `> Ejemplo: .${comando} @usuario`
             )
         }
 
-        const usuario = m.sender
-            .split('@')[0]
-            .split(':')[0]
-
+        const usuario = m.sender.split('@')[0].split(':')[0]
         const objetivo = persona1
             ? persona1.split('@')[0].split(':')[0]
             : usuario
 
-        const api = global.api || {}
+        const url = `${API_URL}?inter=${encodeURIComponent(accion.api)}&key=${encodeURIComponent(API_KEY)}`
 
-        if (!api.url || !api.key) {
-            return m.reply('> ❌ La API no está configurada correctamente.')
-        }
-
-        const url =
-            `${api.url}/sfw/interaction?inter=${encodeURIComponent(accion.api)}&key=${encodeURIComponent(api.key)}`
-
-        const respuesta = await fetch(url)
+        const respuesta = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
 
         if (!respuesta.ok) {
-            throw new Error(`Error de API: ${respuesta.status}`)
+            throw new Error(`Error HTTP ${respuesta.status}`)
         }
 
-        const buffer = Buffer.from(await respuesta.arrayBuffer())
+        const data = await respuesta.json()
+
+        if (data.status === false) {
+            return m.reply(`> ❌ ${data.message || 'La API rechazó la interacción.'}`)
+        }
+
+        const mediaUrl =
+            data.result ||
+            data.url ||
+            data.video ||
+            data.gif ||
+            data.data?.url
+
+        if (!mediaUrl) {
+            console.error('[INTERACCIONES] Respuesta API:', data)
+            return m.reply('> ❌ La API no devolvió un enlace multimedia válido.')
+        }
+
+        const media = await fetch(mediaUrl)
+
+        if (!media.ok) {
+            throw new Error('No se pudo descargar el contenido multimedia.')
+        }
+
+        const buffer = Buffer.from(await media.arrayBuffer())
 
         if (!buffer.length) {
-            throw new Error('La API no devolvió contenido.')
+            throw new Error('El contenido multimedia está vacío.')
         }
 
-        const caption = accionesIndividuales.includes(comando)
+        const caption = individuales.includes(comando)
             ? accion.texto(usuario, usuario)
             : accion.texto(usuario, objetivo)
-
-        const mentions = persona1 ? [persona1, m.sender] : [m.sender]
 
         await sock.sendMessage(m.chat, {
             video: buffer,
             gifPlayback: true,
             caption,
-            mentions
+            mentions: persona1 ? [m.sender, persona1] : [m.sender]
         }, { quoted: m })
 
     } catch (error) {
@@ -145,7 +207,18 @@ handler.command = [
     'reir',
     'llorar',
     'pensar',
-    'dormir'
+    'dormir',
+    'aplaudir',
+    'saltar',
+    'caminar',
+    'bostezar',
+    'estudiar',
+    'cocinar',
+    'saludar2',
+    'celebrar',
+    'proteger',
+    'disculparse',
+    'chocarpuños'
 ]
 
 handler.help = [
@@ -160,7 +233,18 @@ handler.help = [
     'reir',
     'llorar',
     'pensar',
-    'dormir'
+    'dormir',
+    'aplaudir',
+    'saltar',
+    'caminar',
+    'bostezar',
+    'estudiar',
+    'cocinar',
+    'saludar2',
+    'celebrar',
+    'proteger',
+    'disculparse',
+    'chocarpuños'
 ]
 
 handler.tags = ['juegos']
