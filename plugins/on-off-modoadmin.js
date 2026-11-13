@@ -1,3 +1,4 @@
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +11,7 @@ const BASE_DIR = path.resolve(
 
 const DB_DIR = path.join(BASE_DIR, 'database')
 const DB_FILE = path.join(DB_DIR, 'modoadmin.json')
+
 const handler = {}
 
 const normalizar = jid =>
@@ -31,16 +33,24 @@ const buscar = (participantes, identificadores = []) => {
 }
 
 function cargarDB() {
-    try {
-        fs.mkdirSync(DB_DIR, { recursive: true })
+    fs.mkdirSync(DB_DIR, { recursive: true })
 
-        if (!fs.existsSync(DB_FILE)) {
-            fs.writeFileSync(DB_FILE, '{}')
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, '{}', 'utf8')
+    }
+
+    try {
+        const contenido = fs.readFileSync(DB_FILE, 'utf8')
+        const db = contenido.trim() ? JSON.parse(contenido) : {}
+
+        if (!db || typeof db !== 'object' || Array.isArray(db)) {
+            throw new Error('Formato de base de datos inválido')
         }
 
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
-    } catch {
-        return {}
+        return db
+    } catch (error) {
+        console.error('[MODO ADMIN] Error leyendo JSON:', error)
+        throw new Error('No se pudo leer modoadmin.json. No se modificó el archivo.')
     }
 }
 
@@ -48,8 +58,37 @@ function guardarDB(db) {
     fs.mkdirSync(DB_DIR, { recursive: true })
 
     const temporal = `${DB_FILE}.tmp`
-    fs.writeFileSync(temporal, JSON.stringify(db, null, 2))
-    fs.renameSync(temporal, DB_FILE)
+
+    try {
+        fs.writeFileSync(
+            temporal,
+            JSON.stringify(db, null, 2),
+            'utf8'
+        )
+
+        fs.renameSync(temporal, DB_FILE)
+
+        const verificacion = JSON.parse(
+            fs.readFileSync(DB_FILE, 'utf8')
+        )
+
+        if (JSON.stringify(verificacion) !== JSON.stringify(db)) {
+            throw new Error('La verificación del archivo falló')
+        }
+
+        console.log('[MODO ADMIN] Base de datos guardada:', DB_FILE)
+
+        return true
+    } catch (error) {
+        try {
+            if (fs.existsSync(temporal)) {
+                fs.unlinkSync(temporal)
+            }
+        } catch {}
+
+        console.error('[MODO ADMIN] Error guardando:', error)
+        throw error
+    }
 }
 
 const sistema = async (sock, from, titulo = 'Pepe Bot 🐸') => {
@@ -57,20 +96,17 @@ const sistema = async (sock, from, titulo = 'Pepe Bot 🐸') => {
     let thumbnail = null
 
     try {
-        if (from.endsWith('@g.us')) {
-            const metadata = await sock.groupMetadata(from)
-            nombreGrupo = metadata.subject || 'Grupo'
+        const metadata = await sock.groupMetadata(from)
+        nombreGrupo = metadata.subject || 'Grupo'
 
-            try {
-                const pp = await sock.profilePictureUrl(from, 'image')
-                const res = await fetch(pp)
+        try {
+            const pp = await sock.profilePictureUrl(from, 'image')
+            const res = await fetch(pp)
 
-                if (res.ok) {
-                    const buffer = await res.arrayBuffer()
-                    thumbnail = Buffer.from(buffer)
-                }
-            } catch {}
-        }
+            if (res.ok) {
+                thumbnail = Buffer.from(await res.arrayBuffer())
+            }
+        } catch {}
     } catch {}
 
     return {
@@ -92,7 +128,7 @@ const sistema = async (sock, from, titulo = 'Pepe Bot 🐸') => {
 }
 
 handler.run = async (sock, m, args = []) => {
-    const chat = m.key.remoteJid
+    const chat = m.key?.remoteJid
 
     if (!chat?.endsWith('@g.us')) {
         return m.reply('> ❌ Este comando solo funciona en grupos.')
@@ -121,48 +157,62 @@ handler.run = async (sock, m, args = []) => {
     }
 
     const accion = String(args[0] || '').toLowerCase()
-    const db = cargarDB()
-    const nombreGrupo = metadata.subject || 'Grupo'
+
+    let db
+
+    try {
+        db = cargarDB()
+    } catch {
+        return m.reply('> ❌ No pude leer la base de datos del Modo Admin. No se realizaron cambios.')
+    }
+
+    const activo = db[chat] === true
 
     if (['on', 'activar', 'encender'].includes(accion)) {
-        if (db[chat] === true) {
+        if (activo) {
             return m.reply('> ⚠️ El Modo Admin ya está encendido.')
         }
 
         db[chat] = true
-        guardarDB(db)
 
-        const quoted = await sistema(
-            sock,
-            chat,
-            '🔒 MODO ADMIN'
-        )
+        try {
+            guardarDB(db)
+        } catch {
+            return m.reply('> ❌ No se pudo guardar la activación del Modo Admin.')
+        }
 
         return sock.sendMessage(chat, {
-            text: `> MODO ADMIN ACTIVADO`
-        }, { quoted })
+            text: '> 🔒 MODO ADMIN ACTIVADO\n\n> Solamente los administradores pueden utilizar los comandos.'
+        }, { quoted: m })
     }
 
     if (['off', 'desactivar', 'apagar'].includes(accion)) {
-        if (db[chat] !== true) {
+        if (!activo) {
             return m.reply('> ⚠️ El Modo Admin ya está apagado.')
         }
 
         delete db[chat]
-        guardarDB(db)
 
-        const quoted = await sistema(
-            sock,
-            chat,
-            '🔓 MODO ADMIN'
-        )
+        try {
+            guardarDB(db)
+
+            const comprobacion = cargarDB()
+
+            if (comprobacion[chat] === true) {
+                throw new Error('El grupo continúa marcado como activo')
+            }
+        } catch (error) {
+            console.error('[MODO ADMIN] Error al apagar:', error)
+            return m.reply('> ❌ No se pudo confirmar el apagado del Modo Admin.')
+        }
 
         return sock.sendMessage(chat, {
-            text: `> MODO ADMIN DESACTIVO`
-        }, { quoted })
+            text: '> 🔓 MODO ADMIN DESACTIVADO\n\n> Todos los miembros pueden volver a utilizar los comandos.'
+        }, { quoted: m })
     }
 
-    const activo = db[chat] === true
+    const estadoActual = cargarDB()
+    const estaActivo = estadoActual[chat] === true
 
     return sendButtons(sock, chat, {
         title: '⚙️ MODO ADMIN',
@@ -170,9 +220,9 @@ handler.run = async (sock, m, args = []) => {
 
 🔐 *Configuración del grupo*
 
-📌 Estado actual: ${activo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
+📌 Estado actual: ${estaActivo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}
 
-${activo
+${estaActivo
     ? '👮 Solamente los administradores pueden utilizar los comandos.'
     : '🔓 Todos los miembros pueden utilizar los comandos.'}
 
