@@ -19,7 +19,7 @@ const interacciones = {
     },
     acariciar: {
         api: 'pat',
-        texto: (a, b) => `> 🥰 @${a} acarició a @${b}`
+        texto: (a, b) => `> @${a} acarició a @${b}`
     },
     sonreir: {
         api: 'smile',
@@ -67,15 +67,15 @@ const interacciones = {
     },
     saltar: {
         api: 'jump',
-        texto: (a, b) => `> 🐸 @${a} está saltando`
+        texto: (a, b) => `> @${a} está saltando`
     },
     caminar: {
         api: 'walk',
-        texto: (a, b) => `> 🚶 @${a} está caminando`
+        texto: (a, b) => `> @${a} está caminando`
     },
     bostezar: {
         api: 'yawn',
-        texto: (a, b) => `> 🥱 @${a} está bostezando`
+        texto: (a, b) => `> @${a} está bostezando`
     },
     estudiar: {
         api: 'study',
@@ -87,7 +87,7 @@ const interacciones = {
     },
     saludar2: {
         api: 'salute',
-        texto: (a, b) => `> 🫡 @${a} hizo un saludo`
+        texto: (a, b) => `> @${a} saludó`
     },
     celebrar: {
         api: 'celebrate',
@@ -99,11 +99,11 @@ const interacciones = {
     },
     disculparse: {
         api: 'apologize',
-        texto: (a, b) => `> 🙏 @${a} se disculpó con @${b}`
+        texto: (a, b) => `> @${a} se disculpó con @${b}`
     },
     chocarpuños: {
         api: 'fistbump',
-        texto: (a, b) => `> 👊 @${a} chocó puños con @${b}`
+        texto: (a, b) => `> @${a} chocó puños con @${b}`
     },
 
     // Nuevas interacciones
@@ -119,11 +119,7 @@ const interacciones = {
         api: 'stare',
         texto: (a, b) => `> 👀 @${a} se quedó mirando a @${b}`
     },
-    beso: {
-        api: 'blowkiss',
-        texto: (a, b) => `> 💋 @${a} le lanzó un beso a @${b}`
-    },
-    saludarbeso: {
+    kiss: {
         api: 'kiss',
         texto: (a, b) => `> 💋 @${a} le dio un beso a @${b}`
     },
@@ -295,10 +291,6 @@ const interacciones = {
         api: 'peek',
         texto: (a, b) => `> 👀 @${a} está mirando discretamente`
     },
-    reirnervioso: {
-        api: 'cringe',
-        texto: (a, b) => `> 😬 @${a} está incómodo`
-    },
     cantar: {
         api: 'sing',
         texto: (a, b) => `> 🎤 @${a} está cantando`
@@ -382,11 +374,8 @@ handler.run = async (sock, m, args = []) => {
 
             try {
                 data = JSON.parse(buffer.toString('utf8'))
-            } catch {
-                console.error(
-                    '[INTERACCIONES] Respuesta inválida:',
-                    buffer.toString('utf8', 0, 200)
-                )
+            } catch (e) {
+                console.error('[INTERACCIONES] Respuesta API no es JSON válido:', buffer.toString('utf8', 0, 200))
                 return m.reply('> ❌ La API devolvió una respuesta que no se pudo leer.')
             }
 
@@ -401,7 +390,7 @@ handler.run = async (sock, m, args = []) => {
                 data.gif ||
                 data.data?.url
 
-            if (!mediaUrl || typeof mediaUrl !== 'string') {
+            if (!mediaUrl) {
                 console.error('[INTERACCIONES] Respuesta API:', data)
                 return m.reply('> ❌ La API no devolvió un enlace multimedia válido.')
             }
@@ -466,7 +455,6 @@ handler.command = [
     'olfatear',
     'mirar',
     'kiss',
-    'kiss2',
     'cosquillas',
     'gritar',
     'frio',
@@ -509,7 +497,6 @@ handler.command = [
     'acurrucar',
     'apenado',
     'mirarcurioso',
-    'reirnervioso',
     'cantar',
     'saltito',
     'feliz'
@@ -545,7 +532,6 @@ handler.help = [
     'olfatear',
     'mirar',
     'kiss',
-    'kiss2',
     'cosquillas',
     'gritar',
     'frio',
@@ -588,7 +574,6 @@ handler.help = [
     'acurrucar',
     'apenado',
     'mirarcurioso',
-    'reirnervioso',
     'cantar',
     'saltito',
     'feliz'
