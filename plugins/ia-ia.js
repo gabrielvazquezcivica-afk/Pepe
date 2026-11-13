@@ -44,17 +44,17 @@ handler.run = async (sock, m, args = []) => {
         .replace(/^[.!/#]ia(?:[ \t]+|$)/i, '')
         .trim() || args.join(' ').trim()
 
+    // Aviso de uso
     if (!consulta) {
         return m.reply(
-            '> 🤖 *PEPE BOT AI*\n' +
-            '>\n' +
-            '> Escribe tu pregunta.\n' +
-            '>\n' +
-            '> *Ejemplo:*\n' +
-            '> .ia ¿Qué es JavaScript?'
+            '`🤖 PEPE BOT IA`\n\n' +
+            '> Escribe tu pregunta.\n\n' +
+            '`EJEMPLO:`\n' +
+            '> ¿Quién es Cristiano Ronaldo?'
         )
     }
 
+    // Reacción
     await sock.sendMessage(chat, {
         react: {
             text: '🤖',
@@ -93,7 +93,7 @@ handler.run = async (sock, m, args = []) => {
             )
         }
 
-        // Compatible con los dos formatos de respuesta
+        // Compatibilidad con ambos formatos
         const estado = data?.status ?? data?.estado
         const resultado = data?.result ?? data?.resultado
 
@@ -109,20 +109,15 @@ handler.run = async (sock, m, args = []) => {
         }
 
         if (!resultado || typeof resultado !== 'string') {
-            throw new Error(
-                'La API no devolvió un resultado válido.'
-            )
+            throw new Error('La API no devolvió una respuesta válida.')
         }
 
+        // Respuesta de la IA
         await sock.sendMessage(chat, {
             text:
-                '> 🤖 *PEPE BOT AI*\n' +
-                '> ━━━━━━━━━━━━━━━━━━\n' +
-                '>\n' +
+                '`🤖 PEPE BOT IA`\n\n' +
                 resultado.trim() +
-                '\n>\n' +
-                '> ━━━━━━━━━━━━━━━━━━\n' +
-                '> 🐸 *Powered by PEPE BOT*'
+                '\n\n> Powered By 𝒫ℯ𝓅ℯ ℬℴ𝓉 🐸'
         }, {
             quoted: m
         })
@@ -130,11 +125,10 @@ handler.run = async (sock, m, args = []) => {
     } catch (error) {
         console.error('[PEPE IA] Error:', error)
 
+        // Aviso de error
         await m.reply(
-            '> ❌ *No se pudo obtener una respuesta de la IA.*\n' +
-            '>\n' +
-            '> El servidor no pudo procesar tu pregunta.\n' +
-            '>\n' +
+            '`🤖 PEPE BOT IA`\n\n' +
+            '> ❌ No se pudo obtener una respuesta.\n\n' +
             '> Intenta nuevamente más tarde.'
         )
     }
