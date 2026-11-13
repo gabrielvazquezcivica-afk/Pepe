@@ -3,9 +3,48 @@ import config from '../config.js'
 
 const handler = {}
 
+function extraerTexto(m) {
+  let contenido = m.message
+
+  while (contenido) {
+    if (contenido.ephemeralMessage?.message) {
+      contenido = contenido.ephemeralMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessage?.message) {
+      contenido = contenido.viewOnceMessage.message
+      continue
+    }
+
+    if (contenido.viewOnceMessageV2?.message) {
+      contenido = contenido.viewOnceMessageV2.message
+      continue
+    }
+
+    break
+  }
+
+  return (
+    contenido?.extendedTextMessage?.text ??
+    contenido?.conversation ??
+    contenido?.imageMessage?.caption ??
+    contenido?.videoMessage?.caption ??
+    ''
+  )
+}
+
+function obtenerMensajeOriginal(m) {
+  const texto = String(extraerTexto(m))
+    .replace(/\r\n/g, '\n')
+
+  // Quitar únicamente el comando y el primer espacio que lo separa.
+  return texto.replace(/^[.!/#]bc(?:[ \t]+|\n)?/i, '')
+}
+
 handler.run = async (sock, m, args = []) => {
   const chat = m.chat || m.key?.remoteJid
-  const texto = args.join(' ').trim()
+  const texto = obtenerMensajeOriginal(m)
 
   const owners = (config.owner || []).map(n =>
     String(n).replace(/\D/g, '')
@@ -20,7 +59,7 @@ handler.run = async (sock, m, args = []) => {
     }, { quoted: m })
   }
 
-  if (!texto) {
+  if (!texto.trim()) {
     return sock.sendMessage(chat, {
       text: '> 📢 Escribe el mensaje que quieres enviar.\n\n> Ejemplo: .bc Hola a todos 🐸'
     }, { quoted: m })
@@ -39,7 +78,9 @@ handler.run = async (sock, m, args = []) => {
   for (const id of ids) {
     try {
       await sock.sendMessage(id, {
-        text: `> 📢 *ʙʀᴏᴀᴅᴄᴀsᴛ — ᴘᴇᴘᴇ ʙᴏᴛ* 🐸\n\n> ${texto.replace(/\n/g, '\n> ')}`
+        text:
+          `> 📢 *ʙʀᴏᴀᴅᴄᴀsᴛ — ᴘᴇᴘᴇ ʙᴏᴛ* 🐸\n\n` +
+          texto
       })
 
       enviados++
