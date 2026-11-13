@@ -148,31 +148,45 @@ handler.run = async (sock, m, args = []) => {
             throw new Error(`Error HTTP ${respuesta.status}`)
         }
 
-        const data = await respuesta.json()
+        let buffer = Buffer.from(await respuesta.arrayBuffer())
 
-        if (data.status === false) {
-            return m.reply(`> ❌ ${data.message || 'La API rechazó la interacción.'}`)
+        // La API puede responder el JSON con el enlace o el video directamente.
+        const primerByte = buffer.length ? String(buffer.slice(0, 1)) : ''
+
+        if (primerByte === '{' || primerByte === '[') {
+            let data
+
+            try {
+                data = JSON.parse(buffer.toString('utf8'))
+            } catch (e) {
+                console.error('[INTERACCIONES] Respuesta API no es JSON válido:', buffer.toString('utf8', 0, 200))
+                return m.reply('> ❌ La API devolvió una respuesta que no se pudo leer.')
+            }
+
+            if (data.status === false) {
+                return m.reply(`> ❌ ${data.message || 'La API rechazó la interacción.'}`)
+            }
+
+            const mediaUrl =
+                data.result ||
+                data.url ||
+                data.video ||
+                data.gif ||
+                data.data?.url
+
+            if (!mediaUrl) {
+                console.error('[INTERACCIONES] Respuesta API:', data)
+                return m.reply('> ❌ La API no devolvió un enlace multimedia válido.')
+            }
+
+            const media = await fetch(mediaUrl)
+
+            if (!media.ok) {
+                throw new Error('No se pudo descargar el contenido multimedia.')
+            }
+
+            buffer = Buffer.from(await media.arrayBuffer())
         }
-
-        const mediaUrl =
-            data.result ||
-            data.url ||
-            data.video ||
-            data.gif ||
-            data.data?.url
-
-        if (!mediaUrl) {
-            console.error('[INTERACCIONES] Respuesta API:', data)
-            return m.reply('> ❌ La API no devolvió un enlace multimedia válido.')
-        }
-
-        const media = await fetch(mediaUrl)
-
-        if (!media.ok) {
-            throw new Error('No se pudo descargar el contenido multimedia.')
-        }
-
-        const buffer = Buffer.from(await media.arrayBuffer())
 
         if (!buffer.length) {
             throw new Error('El contenido multimedia está vacío.')
