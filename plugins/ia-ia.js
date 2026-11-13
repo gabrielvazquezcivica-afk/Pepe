@@ -3,26 +3,55 @@ const handler = {}
 
 const API = 'https://api-faa.my.id/faa/bard-google?query='
 
+function extraerTexto(m) {
+    let contenido = m.message
+
+    while (contenido) {
+        if (contenido.ephemeralMessage?.message) {
+            contenido = contenido.ephemeralMessage.message
+            continue
+        }
+
+        if (contenido.viewOnceMessage?.message) {
+            contenido = contenido.viewOnceMessage.message
+            continue
+        }
+
+        if (contenido.viewOnceMessageV2?.message) {
+            contenido = contenido.viewOnceMessageV2.message
+            continue
+        }
+
+        break
+    }
+
+    return (
+        contenido?.extendedTextMessage?.text ||
+        contenido?.conversation ||
+        contenido?.imageMessage?.caption ||
+        contenido?.videoMessage?.caption ||
+        m.text ||
+        ''
+    )
+}
+
 handler.run = async (sock, m, args = []) => {
     const chat = m.chat || m.key?.remoteJid
 
-    // Obtener la consulta original
-    const textoOriginal =
-        m.message?.extendedTextMessage?.text ||
-        m.message?.conversation ||
-        m.text ||
-        args.join(' ')
+    const texto = extraerTexto(m)
 
-    const consulta = String(textoOriginal)
-        .replace(/^[.!/#]ia(?:\s+|$)/i, '')
-        .trim()
+    const consulta = String(texto)
+        .replace(/^[.!/#]ia(?:[ \t]+|$)/i, '')
+        .trim() || args.join(' ').trim()
 
     if (!consulta) {
         return m.reply(
-            '🐸 *PEPE BOT — INTELIGENCIA ARTIFICIAL*\n\n' +
-            'Escribe qué quieres preguntarle a la IA.\n\n' +
-            '*Ejemplo:*\n' +
-            '.ia ¿Quién fue Albert Einstein?'
+            '> 🤖 *PEPE BOT AI*\n' +
+            '>\n' +
+            '> Escribe tu pregunta.\n' +
+            '>\n' +
+            '> *Ejemplo:*\n' +
+            '> .ia ¿Qué es JavaScript?'
         )
     }
 
@@ -36,7 +65,7 @@ handler.run = async (sock, m, args = []) => {
     try {
         const url = API + encodeURIComponent(consulta)
 
-        const respuesta = await fetch(url, {
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 Accept: 'application/json'
@@ -44,40 +73,69 @@ handler.run = async (sock, m, args = []) => {
             signal: AbortSignal.timeout(60000)
         })
 
-        if (!respuesta.ok) {
-            throw new Error(`HTTP ${respuesta.status}`)
-        }
+        const contenido = await response.text()
 
-        const data = await respuesta.json()
-
-        if (data.estado !== true || !data.resultado) {
-            return m.reply(
-                '❌ La IA no pudo generar una respuesta. Intenta nuevamente.'
+        if (!response.ok) {
+            throw new Error(
+                `HTTP ${response.status}: ${contenido.slice(0, 500)}`
             )
         }
 
-        const resultado = String(data.resultado).trim()
+        let data
+
+        try {
+            data = JSON.parse(contenido)
+        } catch {
+            throw new Error(
+                `La API no devolvió JSON válido: ${contenido.slice(0, 500)}`
+            )
+        }
+
+        console.log('[PEPE IA] Respuesta API:', data)
+
+        const resultado = data?.resultado
+        const estado = data?.estado
+
+        const estadoValido = [
+            true,
+            'true',
+            'verdadero',
+            '1',
+            1
+        ].includes(
+            typeof estado === 'string'
+                ? estado.toLowerCase().trim()
+                : estado
+        )
+
+        if (!resultado || (estado !== undefined && !estadoValido)) {
+            throw new Error(
+                `La API respondió sin resultado válido: ${JSON.stringify(data).slice(0, 500)}`
+            )
+        }
 
         await sock.sendMessage(chat, {
             text:
-                `🤖 *PEPE BOT AI*\n` +
-                `━━━━━━━━━━━━━━━━━━\n\n` +
-                resultado +
-                `\n\n━━━━━━━━━━━━━━━━━━\n` +
-                `🐸 *Powered by PEPE BOT*`,
-            contextInfo: {
-                mentionedJid: []
-            }
+                '> 🤖 *PEPE BOT AI*\n' +
+                '> ━━━━━━━━━━━━━━━━━━\n' +
+                '>\n' +
+                String(resultado).trim() +
+                '\n>\n' +
+                '> ━━━━━━━━━━━━━━━━━━\n' +
+                '> 🐸 *Powered by PEPE BOT*'
         }, {
             quoted: m
         })
 
     } catch (error) {
-        console.error('[PEPE IA]', error)
+        console.error('[PEPE IA] Error:', error)
 
         await m.reply(
-            '❌ Ocurrió un error al conectar con la IA.\n\n' +
-            'Puede que el servidor esté ocupado o no responda. Intenta más tarde.'
+            '> ❌ *No se pudo obtener una respuesta de la IA.*\n' +
+            '>\n' +
+            '> Puede que el servidor esté ocupado o no responda.\n' +
+            '>\n' +
+            '> Intenta nuevamente más tarde.'
         )
     }
 }
