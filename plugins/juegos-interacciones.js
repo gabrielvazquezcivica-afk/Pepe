@@ -1,8 +1,8 @@
 
 const handler = {}
 
-const API_URL = 'https://TU-API/sfw/interaction'
-const API_KEY = 'TU_API_KEY'
+const url = `${api.url}/sfw/interaction?inter=${encodeURIComponent(accion.api)}&key=${api.key}`
+const respuesta = await fetch(url)
 
 const interacciones = {
   abrazar: {
