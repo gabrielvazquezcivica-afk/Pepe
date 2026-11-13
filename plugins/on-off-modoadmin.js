@@ -1,9 +1,7 @@
-
 import fs from 'node:fs'
 import path from 'node:path'
-import { sendButtons } from 'baileys-buttons'
-
 import { fileURLToPath } from 'node:url'
+import { sendButtons } from 'baileys-buttons'
 
 const BASE_DIR = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -12,7 +10,6 @@ const BASE_DIR = path.resolve(
 
 const DB_DIR = path.join(BASE_DIR, 'database')
 const DB_FILE = path.join(DB_DIR, 'modoadmin.json')
-
 const handler = {}
 
 const normalizar = jid =>
