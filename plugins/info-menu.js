@@ -13,7 +13,8 @@ const ordenTags = [
   'descargas',
   'buscador',
   'herramientas',
-  'diversion',
+  'ia',
+  'juegos',
   'rpg',
   'owner',
   'stickers',
@@ -28,12 +29,13 @@ const categoriasInfo = {
   descargas: { nombre: '𝐃𝐄𝐒𝐂𝐀𝐑𝐆𝐀𝐒', emoji: '📥' },
   buscador: { nombre: '𝐁𝐔𝐒𝐂𝐀𝐃𝐎𝐑', emoji: '🔎' },
   herramientas: { nombre: '𝐇𝐄𝐑𝐑𝐀𝐌𝐈𝐄𝐍𝐓𝐀𝐒', emoji: '🛠️' },
-  diversion: { nombre: '𝐃𝐈𝐕𝐄𝐑𝐒𝐈𝐎́𝐍', emoji: '🎮' },
+  juegos: { nombre: '𝐉𝐔𝐄𝐆𝐎𝐒', emoji: '🎮' },
   rpg: { nombre: '𝐑𝐏𝐆', emoji: '⚔️' },
   owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '👑' },
   stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
   nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' },
-  'free fire': { nombre: '𝐅𝐑𝐄𝐄 𝐅𝐈𝐑𝐄', emoji: '🥷🏻' }
+  'free fire': { nombre: '𝐅𝐑𝐄𝐄 𝐅𝐈𝐑𝐄', emoji: '🥷🏻' },
+  ia: { nombre: '𝐈𝐀', emoji: '🤖' }
 }
 
 function normalizarTag(tag = '') {
