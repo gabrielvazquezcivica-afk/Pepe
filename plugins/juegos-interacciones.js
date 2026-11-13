@@ -110,8 +110,36 @@ handler.run = async (sock, m, args = []) => {
   }
 }
 
-handler.command = Object.keys(interacciones)
-handler.help = Object.keys(interacciones)
+handler.command = [
+  'abrazar',
+  'saludar',
+  'acariciar',
+  'sonreir',
+  'felicitar',
+  'chocar5',
+  'animar',
+  'bailar',
+  'reir',
+  'llorar',
+  'pensar',
+  'dormir'
+]
+
+handler.help = [
+  'abrazar',
+  'saludar',
+  'acariciar',
+  'sonreir',
+  'felicitar',
+  'chocar5',
+  'animar',
+  'bailar',
+  'reir',
+  'llorar',
+  'pensar',
+  'dormir'
+]
+
 handler.tags = ['juegos']
 handler.menu = true
 
