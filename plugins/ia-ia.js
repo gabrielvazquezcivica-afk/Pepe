@@ -75,42 +75,42 @@ handler.run = async (sock, m, args = []) => {
 
         const contenido = await response.text()
 
-        if (!response.ok) {
-            throw new Error(
-                `HTTP ${response.status}: ${contenido.slice(0, 500)}`
-            )
-        }
-
         let data
 
         try {
             data = JSON.parse(contenido)
         } catch {
             throw new Error(
-                `La API no devolvió JSON válido: ${contenido.slice(0, 500)}`
+                `Respuesta inválida de la API: ${contenido.slice(0, 300)}`
             )
         }
 
         console.log('[PEPE IA] Respuesta API:', data)
 
-        const resultado = data?.resultado
-        const estado = data?.estado
-
-        const estadoValido = [
-            true,
-            'true',
-            'verdadero',
-            '1',
-            1
-        ].includes(
-            typeof estado === 'string'
-                ? estado.toLowerCase().trim()
-                : estado
-        )
-
-        if (!resultado || (estado !== undefined && !estadoValido)) {
+        if (!response.ok) {
             throw new Error(
-                `La API respondió sin resultado válido: ${JSON.stringify(data).slice(0, 500)}`
+                `HTTP ${response.status}: ${data?.error || contenido.slice(0, 300)}`
+            )
+        }
+
+        // Compatible con los dos formatos de respuesta
+        const estado = data?.status ?? data?.estado
+        const resultado = data?.result ?? data?.resultado
+
+        if (
+            estado === false ||
+            estado === 'false' ||
+            estado === 0 ||
+            estado === '0'
+        ) {
+            throw new Error(
+                data?.error || 'La API indicó que la solicitud falló.'
+            )
+        }
+
+        if (!resultado || typeof resultado !== 'string') {
+            throw new Error(
+                'La API no devolvió un resultado válido.'
             )
         }
 
@@ -119,7 +119,7 @@ handler.run = async (sock, m, args = []) => {
                 '> 🤖 *PEPE BOT AI*\n' +
                 '> ━━━━━━━━━━━━━━━━━━\n' +
                 '>\n' +
-                String(resultado).trim() +
+                resultado.trim() +
                 '\n>\n' +
                 '> ━━━━━━━━━━━━━━━━━━\n' +
                 '> 🐸 *Powered by PEPE BOT*'
@@ -133,7 +133,7 @@ handler.run = async (sock, m, args = []) => {
         await m.reply(
             '> ❌ *No se pudo obtener una respuesta de la IA.*\n' +
             '>\n' +
-            '> Puede que el servidor esté ocupado o no responda.\n' +
+            '> El servidor no pudo procesar tu pregunta.\n' +
             '>\n' +
             '> Intenta nuevamente más tarde.'
         )
