@@ -9,13 +9,17 @@ const interacciones = {
         api: 'hug',
         texto: (a, b) => `> 🤗 @${a} abrazó a @${b}`
     },
+    consolar: {
+        api: 'comfort',
+        texto: (a, b) => `> 💗 @${a} consoló a @${b}`
+    },
     saludar: {
         api: 'wave',
         texto: (a, b) => `> 👋 @${a} saludó a @${b}`
     },
     acariciar: {
         api: 'pat',
-        texto: (a, b) => `> @${a} acarició a @${b}`
+        texto: (a, b) => `> 🥰 @${a} acarició a @${b}`
     },
     sonreir: {
         api: 'smile',
@@ -49,6 +53,10 @@ const interacciones = {
         api: 'think',
         texto: (a, b) => `> 🤔 @${a} se quedó pensando`
     },
+    pensarprofundo: {
+        api: 'thinkhard',
+        texto: (a, b) => `> 🧠 @${a} está pensando profundamente`
+    },
     dormir: {
         api: 'sleep',
         texto: (a, b) => `> 😴 @${a} se quedó dormido`
@@ -59,15 +67,15 @@ const interacciones = {
     },
     saltar: {
         api: 'jump',
-        texto: (a, b) => `> @${a} está saltando`
+        texto: (a, b) => `> 🐸 @${a} está saltando`
     },
     caminar: {
         api: 'walk',
-        texto: (a, b) => `> @${a} está caminando`
+        texto: (a, b) => `> 🚶 @${a} está caminando`
     },
     bostezar: {
         api: 'yawn',
-        texto: (a, b) => `> @${a} está bostezando`
+        texto: (a, b) => `> 🥱 @${a} está bostezando`
     },
     estudiar: {
         api: 'study',
@@ -79,7 +87,7 @@ const interacciones = {
     },
     saludar2: {
         api: 'salute',
-        texto: (a, b) => `> @${a} saludó`
+        texto: (a, b) => `> 🫡 @${a} hizo un saludo`
     },
     celebrar: {
         api: 'celebrate',
@@ -91,11 +99,217 @@ const interacciones = {
     },
     disculparse: {
         api: 'apologize',
-        texto: (a, b) => `> @${a} se disculpó con @${b}`
+        texto: (a, b) => `> 🙏 @${a} se disculpó con @${b}`
     },
     chocarpuños: {
         api: 'fistbump',
-        texto: (a, b) => `> @${a} chocó puños con @${b}`
+        texto: (a, b) => `> 👊 @${a} chocó puños con @${b}`
+    },
+
+    // Nuevas interacciones
+    curioso: {
+        api: 'curious',
+        texto: (a, b) => `> 🤨 @${a} tiene curiosidad`
+    },
+    olfatear: {
+        api: 'sniff',
+        texto: (a, b) => `> 🐽 @${a} está olfateando`
+    },
+    mirar: {
+        api: 'stare',
+        texto: (a, b) => `> 👀 @${a} se quedó mirando a @${b}`
+    },
+    beso: {
+        api: 'blowkiss',
+        texto: (a, b) => `> 💋 @${a} le lanzó un beso a @${b}`
+    },
+    saludarbeso: {
+        api: 'kiss',
+        texto: (a, b) => `> 💋 @${a} le dio un beso a @${b}`
+    },
+    cosquillas: {
+        api: 'tickle',
+        texto: (a, b) => `> 😂 @${a} le hizo cosquillas a @${b}`
+    },
+    gritar: {
+        api: 'scream',
+        texto: (a, b) => `> 😱 @${a} está gritando`
+    },
+    frio: {
+        api: 'cold',
+        texto: (a, b) => `> 🥶 @${a} tiene frío`
+    },
+    jugar: {
+        api: 'gaming',
+        texto: (a, b) => `> 🎮 @${a} está jugando`
+    },
+    dibujar: {
+        api: 'draw',
+        texto: (a, b) => `> 🎨 @${a} está dibujando`
+    },
+    llamar: {
+        api: 'call',
+        texto: (a, b) => `> 📞 @${a} está llamando`
+    },
+    aburrido: {
+        api: 'bored',
+        texto: (a, b) => `> 😐 @${a} está aburrido`
+    },
+    dramatico: {
+        api: 'dramatic',
+        texto: (a, b) => `> 🎭 @${a} está siendo dramático`
+    },
+    cafe: {
+        api: 'coffee',
+        texto: (a, b) => `> ☕ @${a} está tomando café`
+    },
+    enojado: {
+        api: 'angry',
+        texto: (a, b) => `> 😠 @${a} está enojado`
+    },
+    bleh: {
+        api: 'bleh',
+        texto: (a, b) => `> 😛 @${a} sacó la lengua`
+    },
+    nope: {
+        api: 'nope',
+        texto: (a, b) => `> 🙅 @${a} dijo que no`
+    },
+    puchero: {
+        api: 'pout',
+        texto: (a, b) => `> 🥺 @${a} está haciendo pucheros`
+    },
+    correr: {
+        api: 'run',
+        texto: (a, b) => `> 🏃 @${a} está corriendo`
+    },
+    triste: {
+        api: 'sad',
+        texto: (a, b) => `> 😔 @${a} está triste`
+    },
+    asustado: {
+        api: 'scared',
+        texto: (a, b) => `> 😨 @${a} está asustado`
+    },
+    timido: {
+        api: 'shy',
+        texto: (a, b) => `> 😊 @${a} está tímido`
+    },
+    guiñar: {
+        api: 'wink',
+        texto: (a, b) => `> 😉 @${a} guiñó un ojo`
+    },
+    comer: {
+        api: 'eat',
+        texto: (a, b) => `> 🍽️ @${a} está comiendo`
+    },
+    sonrojar: {
+        api: 'blush',
+        texto: (a, b) => `> 😊 @${a} se sonrojó`
+    },
+    presumir: {
+        api: 'smug',
+        texto: (a, b) => `> 😏 @${a} está presumiendo`
+    },
+    hablar: {
+        api: 'talk',
+        texto: (a, b) => `> 💬 @${a} está hablando`
+    },
+    estornudar: {
+        api: 'sneeze',
+        texto: (a, b) => `> 🤧 @${a} está estornudando`
+    },
+    enfermo: {
+        api: 'sick',
+        texto: (a, b) => `> 🤒 @${a} no se siente bien`
+    },
+    limpiar: {
+        api: 'scrub',
+        texto: (a, b) => `> 🧽 @${a} está limpiando`
+    },
+    vergüenza: {
+        api: 'cringe',
+        texto: (a, b) => `> 😬 @${a} está avergonzado`
+    },
+    facepalm: {
+        api: 'facepalm',
+        texto: (a, b) => `> 🤦 @${a} hizo un facepalm`
+    },
+    boop: {
+        api: 'boop',
+        texto: (a, b) => `> 👉 @${a} hizo boop a @${b}`
+    },
+    piggyback: {
+        api: 'piggyback',
+        texto: (a, b) => `> 🐸 @${a} lleva a @${b}`
+    },
+    compartircomida: {
+        api: 'sharefood',
+        texto: (a, b) => `> 🍱 @${a} compartió comida con @${b}`
+    },
+    regañar: {
+        api: 'scold',
+        texto: (a, b) => `> 😤 @${a} regañó a @${b}`
+    },
+    bromear: {
+        api: 'tease',
+        texto: (a, b) => `> 😜 @${a} bromeó con @${b}`
+    },
+    inclinar: {
+        api: 'bow',
+        texto: (a, b) => `> 🙇 @${a} hizo una reverencia`
+    },
+    girar: {
+        api: 'spin',
+        texto: (a, b) => `> 🌀 @${a} está girando`
+    },
+    posar: {
+        api: 'pose',
+        texto: (a, b) => `> 📸 @${a} está posando`
+    },
+    flexionar: {
+        api: 'flex',
+        texto: (a, b) => `> 💪 @${a} está presumiendo`
+    },
+    puntitas: {
+        api: 'tiptoe',
+        texto: (a, b) => `> 🤫 @${a} camina de puntitas`
+    },
+    picnic: {
+        api: 'picnic',
+        texto: (a, b) => `> 🧺 @${a} está disfrutando un picnic`
+    },
+    siesta: {
+        api: 'snuggle',
+        texto: (a, b) => `> 💤 @${a} está descansando con @${b}`
+    },
+    acurrucar: {
+        api: 'cuddle',
+        texto: (a, b) => `> 🧸 @${a} se acurrucó con @${b}`
+    },
+    apenado: {
+        api: 'blush',
+        texto: (a, b) => `> 😊 @${a} está apenado`
+    },
+    mirarcurioso: {
+        api: 'peek',
+        texto: (a, b) => `> 👀 @${a} está mirando discretamente`
+    },
+    reirnervioso: {
+        api: 'cringe',
+        texto: (a, b) => `> 😬 @${a} está incómodo`
+    },
+    cantar: {
+        api: 'sing',
+        texto: (a, b) => `> 🎤 @${a} está cantando`
+    },
+    saltito: {
+        api: 'trip',
+        texto: (a, b) => `> 🐸 @${a} dio un saltito`
+    },
+    feliz: {
+        api: 'happy',
+        texto: (a, b) => `> 😄 @${a} está feliz`
     }
 }
 
@@ -111,9 +325,18 @@ handler.run = async (sock, m, args = []) => {
         const citado = m.quoted || null
 
         const individuales = [
-            'llorar', 'pensar', 'dormir', 'saltar',
-            'caminar', 'bostezar', 'estudiar',
-            'cocinar', 'saludar2', 'celebrar'
+            'llorar', 'pensar', 'pensarprofundo', 'dormir',
+            'saltar', 'caminar', 'bostezar', 'estudiar',
+            'cocinar', 'saludar2', 'celebrar', 'curioso',
+            'olfatear', 'gritar', 'frio', 'jugar',
+            'dibujar', 'llamar', 'aburrido', 'dramatico',
+            'cafe', 'enojado', 'bleh', 'nope', 'puchero',
+            'correr', 'triste', 'asustado', 'timido',
+            'guiñar', 'comer', 'sonrojar', 'presumir',
+            'hablar', 'estornudar', 'enfermo', 'limpiar',
+            'vergüenza', 'facepalm', 'inclinar', 'girar',
+            'posar', 'flexionar', 'puntitas', 'picnic',
+            'cantar', 'saltito', 'feliz'
         ]
 
         let persona1 =
@@ -150,16 +373,20 @@ handler.run = async (sock, m, args = []) => {
 
         let buffer = Buffer.from(await respuesta.arrayBuffer())
 
-        // La API puede responder el JSON con el enlace o el video directamente.
-        const primerByte = buffer.length ? String(buffer.slice(0, 1)) : ''
+        const primerByte = buffer.length
+            ? String.fromCharCode(buffer[0])
+            : ''
 
         if (primerByte === '{' || primerByte === '[') {
             let data
 
             try {
                 data = JSON.parse(buffer.toString('utf8'))
-            } catch (e) {
-                console.error('[INTERACCIONES] Respuesta API no es JSON válido:', buffer.toString('utf8', 0, 200))
+            } catch {
+                console.error(
+                    '[INTERACCIONES] Respuesta inválida:',
+                    buffer.toString('utf8', 0, 200)
+                )
                 return m.reply('> ❌ La API devolvió una respuesta que no se pudo leer.')
             }
 
@@ -174,7 +401,7 @@ handler.run = async (sock, m, args = []) => {
                 data.gif ||
                 data.data?.url
 
-            if (!mediaUrl) {
+            if (!mediaUrl || typeof mediaUrl !== 'string') {
                 console.error('[INTERACCIONES] Respuesta API:', data)
                 return m.reply('> ❌ La API no devolvió un enlace multimedia válido.')
             }
@@ -211,6 +438,7 @@ handler.run = async (sock, m, args = []) => {
 
 handler.command = [
     'abrazar',
+    'consolar',
     'saludar',
     'acariciar',
     'sonreir',
@@ -221,6 +449,7 @@ handler.command = [
     'reir',
     'llorar',
     'pensar',
+    'pensarprofundo',
     'dormir',
     'aplaudir',
     'saltar',
@@ -232,11 +461,63 @@ handler.command = [
     'celebrar',
     'proteger',
     'disculparse',
-    'chocarpuños'
+    'chocarpuños',
+    'curioso',
+    'olfatear',
+    'mirar',
+    'kiss',
+    'kiss2',
+    'cosquillas',
+    'gritar',
+    'frio',
+    'jugar',
+    'dibujar',
+    'llamar',
+    'aburrido',
+    'dramatico',
+    'cafe',
+    'enojado',
+    'bleh',
+    'nope',
+    'puchero',
+    'correr',
+    'triste',
+    'asustado',
+    'timido',
+    'guiñar',
+    'comer',
+    'sonrojar',
+    'presumir',
+    'hablar',
+    'estornudar',
+    'enfermo',
+    'limpiar',
+    'vergüenza',
+    'facepalm',
+    'boop',
+    'piggyback',
+    'compartircomida',
+    'regañar',
+    'bromear',
+    'inclinar',
+    'girar',
+    'posar',
+    'flexionar',
+    'puntitas',
+    'picnic',
+    'siesta',
+    'acurrucar',
+    'apenado',
+    'mirarcurioso',
+    'reirnervioso',
+    'cantar',
+    'saltito',
+    'feliz'
 ]
 
 handler.help = [
     'abrazar',
+    'consolar',
     'saludar',
     'acariciar',
     'sonreir',
@@ -247,6 +528,7 @@ handler.help = [
     'reir',
     'llorar',
     'pensar',
+    'pensarprofundo',
     'dormir',
     'aplaudir',
     'saltar',
@@ -258,7 +540,58 @@ handler.help = [
     'celebrar',
     'proteger',
     'disculparse',
-    'chocarpuños'
+    'chocarpuños',
+    'curioso',
+    'olfatear',
+    'mirar',
+    'kiss',
+    'kiss2',
+    'cosquillas',
+    'gritar',
+    'frio',
+    'jugar',
+    'dibujar',
+    'llamar',
+    'aburrido',
+    'dramatico',
+    'cafe',
+    'enojado',
+    'bleh',
+    'nope',
+    'puchero',
+    'correr',
+    'triste',
+    'asustado',
+    'timido',
+    'guiñar',
+    'comer',
+    'sonrojar',
+    'presumir',
+    'hablar',
+    'estornudar',
+    'enfermo',
+    'limpiar',
+    'vergüenza',
+    'facepalm',
+    'boop',
+    'piggyback',
+    'compartircomida',
+    'regañar',
+    'bromear',
+    'inclinar',
+    'girar',
+    'posar',
+    'flexionar',
+    'puntitas',
+    'picnic',
+    'siesta',
+    'acurrucar',
+    'apenado',
+    'mirarcurioso',
+    'reirnervioso',
+    'cantar',
+    'saltito',
+    'feliz'
 ]
 
 handler.tags = ['juegos']
