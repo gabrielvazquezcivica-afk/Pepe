@@ -3,20 +3,39 @@ const handler = {}
 
 const API = 'https://api-faa.my.id/faa/fbdownload?url='
 
-async function detectarTipo(url) {
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { Range: 'bytes=0-0' },
-    signal: AbortSignal.timeout(30000)
-  })
+function detectarTipo(buffer) {
+  if (
+    buffer[0] === 0xFF &&
+    buffer[1] === 0xD8 &&
+    buffer[2] === 0xFF
+  ) return 'image/jpeg'
 
-  if (!response.ok && response.status !== 206) {
-    throw new Error('No se pudo comprobar el archivo multimedia.')
+  if (
+    buffer[0] === 0x89 &&
+    buffer.toString('ascii', 1, 4) === 'PNG'
+  ) return 'image/png'
+
+  if (
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) return 'image/webp'
+
+  if (buffer.toString('ascii', 0, 3) === 'GIF') {
+    return 'image/gif'
   }
 
-  const tipo = response.headers.get('content-type') || ''
+  if (buffer.toString('ascii', 4, 8) === 'ftyp') {
+    return 'video/mp4'
+  }
 
-  return tipo.toLowerCase()
+  if (
+    buffer[0] === 0x1A &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xDF &&
+    buffer[3] === 0xA3
+  ) return 'video/webm'
+
+  return null
 }
 
 handler.run = async (sock, m, args = []) => {
@@ -58,29 +77,45 @@ handler.run = async (sock, m, args = []) => {
       throw new Error(data.error || 'La API no devolvió contenido multimedia.')
     }
 
-    const { media, thumbnail } = data.result
-    const tipo = await detectarTipo(media)
+    const mediaResponse = await fetch(data.result.media, {
+      signal: AbortSignal.timeout(120000)
+    })
+
+    if (!mediaResponse.ok) {
+      throw new Error(`Error descargando archivo: HTTP ${mediaResponse.status}`)
+    }
+
+    const buffer = Buffer.from(await mediaResponse.arrayBuffer())
+
+    if (!buffer.length) {
+      throw new Error('El archivo multimedia está vacío.')
+    }
+
+    const tipo = detectarTipo(buffer)
+
+    console.log('[PEPE FACEBOOK] Tipo detectado:', tipo)
 
     const caption =
       '`📥 PEPE BOT FACEBOOK`\n\n' +
       '✅ Descarga completada.\n\n' +
       '> Powered By 𝒫ℯ𝓅ℯ ℬℴ𝓉 🐸'
 
-    if (tipo.startsWith('image/')) {
+    if (tipo?.startsWith('image/')) {
       await sock.sendMessage(chat, {
-        image: { url: media },
+        image: buffer,
+        mimetype: tipo,
         caption
       }, { quoted: m })
 
-    } else if (tipo.startsWith('video/')) {
+    } else if (tipo?.startsWith('video/')) {
       await sock.sendMessage(chat, {
-        video: { url: media },
-        mimetype: tipo.split(';')[0] || 'video/mp4',
+        video: buffer,
+        mimetype: tipo,
         caption
       }, { quoted: m })
 
     } else {
-      throw new Error(`Tipo de archivo no compatible: ${tipo || 'desconocido'}`)
+      throw new Error('No se pudo reconocer el formato real del archivo.')
     }
 
   } catch (error) {
