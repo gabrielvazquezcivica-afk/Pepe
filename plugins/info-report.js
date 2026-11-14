@@ -1,7 +1,7 @@
 
 const handler = {}
 
-const GRUPO_REPORTES_LINK = 'https://chat.whatsapp.com/TU_CODIGO'
+const GRUPO_REPORTES_LINK = 'https://chat.whatsapp.com/HWtg3ErQbe404jcsTwQ4gM'
 
 function obtenerNumero(m) {
     const posibles = [
