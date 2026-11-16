@@ -1,3 +1,4 @@
+
 import config from '../config.js'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -66,31 +67,39 @@ function letraElegante(texto = '') {
 }
 
 function obtenerSaludo() {
-  const hora = new Date().getHours()
+  const hora = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Mexico_City',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    }).format(new Date())
+  )
 
-  if (hora >= 5 && hora < 12) return '🌅 ¡𝐁𝐮𝐞𝐧𝐨𝐬 𝐝𝐢́𝐚𝐬!'
-  if (hora >= 12 && hora < 19) return '☀️ ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐭𝐚𝐫𝐝𝐞𝐬!'
+  if (hora >= 5 && hora < 12) {
+    return '🌅 ¡𝐁𝐮𝐞𝐧𝐨𝐬 𝐝𝐢́𝐚𝐬!'
+  }
+
+  if (hora >= 12 && hora < 19) {
+    return '☀️ ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐭𝐚𝐫𝐝𝐞𝐬!'
+  }
+
   return '🌙 ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐧𝐨𝐜𝐡𝐞𝐬!'
 }
 
 function obtenerEmoji(indice = 0) {
-  return indice % 2 === 0 ? '🐸' : '🌟'
+  return indice % 2 === 0 ? '💚' : '🌟'
 }
 
 function obtenerComandos(plugin) {
   const origen = Array.isArray(plugin.help)
     ? plugin.help
-    : Array.isArray(plugin.command)
-      ? plugin.command
-      : typeof plugin.help === 'string'
-        ? [plugin.help]
-        : typeof plugin.command === 'string'
-          ? [plugin.command]
-          : []
+    : typeof plugin.help === 'string'
+      ? [plugin.help]
+      : []
 
   return origen
     .filter(comando => typeof comando === 'string')
-    .map(comando => comando.trim().split(/\s+/)[0])
+    .map(comando => comando.trim())
     .filter(Boolean)
 }
 
@@ -120,6 +129,7 @@ handler.run = async (sock, m) => {
         if (!plugin || plugin.menu === false) continue
 
         const comandos = obtenerComandos(plugin)
+
         if (!comandos.length) continue
 
         const tags = Array.isArray(plugin.tags) && plugin.tags.length
@@ -128,6 +138,7 @@ handler.run = async (sock, m) => {
 
         for (const tagOriginal of tags) {
           const tag = normalizarTag(tagOriginal)
+
           if (!tag) continue
 
           if (!categorias.has(tag)) {
@@ -138,6 +149,7 @@ handler.run = async (sock, m) => {
             const clave = `${tag}:${comando.toLowerCase()}`
 
             if (vistos.has(clave)) continue
+
             vistos.add(clave)
             categorias.get(tag).add(comando)
           }
@@ -161,19 +173,22 @@ handler.run = async (sock, m) => {
     let texto = ''
 
     texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
-    texto += '       ─── ⋆⋅☆⋅⋆ ──\n'
+    texto += '       ✦ 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 ✦\n'
     texto += `       ୨୧ ${nombreBot} ୨୧\n`
-    texto += '       ── ⋆⋅☆⋅⋆ ───\n'
     texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
 
-    texto += `${saludo}\n`
-    texto += `╰┈➤ 👤 𝐔𝐬𝐮𝐚𝐫𝐢𝐨: ${nombreUsuario}\n`
-    texto += `╰┈➤ 👑 𝐎𝐰𝐧𝐞𝐫: ${nombreOwner}\n`
-    texto += `╰┈➤ ⚙️ 𝐏𝐫𝐞𝐟𝐢𝐣𝐨: ${prefijo}\n`
-    texto += `╰┈➤ 📚 𝐂𝐨𝐦𝐚𝐧𝐝𝐨𝐬: ${totalComandos}\n`
-    texto += '╭──────── ⋆⋅☆⋅⋆ ────────╮\n'
+    texto += `${saludo}\n\n`
+
+    texto += `╭─「 👤 𝐔𝐒𝐔𝐀𝐑𝐈𝐎 」\n`
+    texto += `┃ ✧ ${nombreUsuario}\n`
+    texto += `┃ 👑 Owner: ${nombreOwner}\n`
+    texto += `┃ ⚙️ Prefijo: ${prefijo}\n`
+    texto += `┃ 📚 Comandos: ${totalComandos}\n`
+    texto += `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`
+
+    texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
     texto += '       ✧ 𝐋𝐈𝐒𝐓𝐀 𝐃𝐄 𝐂𝐎𝐌𝐀𝐍𝐃𝐎𝐒 ✧\n'
-    texto += '╰──────── ⋆⋅☆⋅⋆ ────────╯\n\n'
+    texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
 
     const tagsOrdenados = [
       ...ordenTags.filter(tag => categorias.has(tag)),
@@ -184,6 +199,7 @@ handler.run = async (sock, m) => {
 
     for (const tag of tagsOrdenados) {
       const comandos = [...categorias.get(tag)]
+
       if (!comandos.length) continue
 
       const info = categoriasInfo[tag] || {
@@ -191,16 +207,13 @@ handler.run = async (sock, m) => {
         emoji: '✨'
       }
 
-      texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
-      texto += `┃ ${info.emoji} ${info.nombre}\n`
-      texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n'
+      texto += `╭━━━〔 ${info.emoji} ${info.nombre} 〕\n`
 
       for (let i = 0; i < comandos.length; i++) {
-        const comando = comandos[i]
-        texto += `${obtenerEmoji(i)} ${letraElegante(prefijo + comando)}\n`
+        texto += `┃ ${obtenerEmoji(i)} ${prefijo}${comandos[i]}\n`
       }
 
-      texto += '╰────────── ⋆⋅☆⋅⋆ ──────\n\n'
+      texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
     }
 
     texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
@@ -229,6 +242,7 @@ handler.run = async (sock, m) => {
       { text: texto },
       { quoted: m }
     )
+
   } catch (error) {
     console.error('[MENU ERROR]', error)
     return m.reply('> ❌ Ocurrió un error al generar el menú.')
