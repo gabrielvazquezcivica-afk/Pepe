@@ -579,7 +579,7 @@ handler.help = [
     'feliz'
 ]
 
-handler.tags = ['juegos']
+handler.tags = ['anime']
 handler.menu = true
 
 export default handler
