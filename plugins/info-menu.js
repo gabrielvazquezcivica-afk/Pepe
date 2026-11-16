@@ -18,7 +18,8 @@ const ordenTags = [
   'rpg',
   'owner',
   'stickers',
-  'nsfw'
+  'nsfw',
+  'anime'
 ]
 
 const categoriasInfo = {
@@ -34,6 +35,7 @@ const categoriasInfo = {
   owner: { nombre: '𝐎𝐖𝐍𝐄𝐑', emoji: '👑' },
   stickers: { nombre: '𝐒𝐓𝐈𝐂𝐊𝐄𝐑𝐒', emoji: '🎨' },
   nsfw: { nombre: '𝐍𝐒𝐅𝐖', emoji: '🔞' },
+  anime: { nombre: '𝐀𝐍𝐈𝐌𝐄', emoji: '🌸' },
   'free fire': { nombre: '𝐅𝐑𝐄𝐄 𝐅𝐈𝐑𝐄', emoji: '🥷🏻' },
   ia: { nombre: '𝐈𝐀', emoji: '🤖' }
 }
