@@ -86,8 +86,16 @@ function obtenerSaludo() {
   return '🌙 ¡𝐁𝐮𝐞𝐧𝐚𝐬 𝐧𝐨𝐜𝐡𝐞𝐬!'
 }
 
-function obtenerEmoji(indice = 0) {
-  return indice % 2 === 0 ? '💚' : '🌟'
+function obtenerEmoji() {
+  const emojis = [
+    '🐸', '🌟', '✨', '💎', '🔥',
+    '🌸', '🎮', '🦋', '🍀', '🌙',
+    '⚡', '💫', '🎀', '🪄', '👑',
+    '🧸', '🌈', '💜', '🩵', '⭐',
+    '🍄', '🪽', '🎧', '🪷', '💠'
+  ]
+
+  return emojis[Math.floor(Math.random() * emojis.length)]
 }
 
 function obtenerComandos(plugin) {
@@ -179,12 +187,12 @@ handler.run = async (sock, m) => {
 
     texto += `${saludo}\n\n`
 
-    texto += `╭─「 👤 𝐔𝐒𝐔𝐀𝐑𝐈𝐎 」\n`
+    texto += '╭─「 👤 𝐔𝐒𝐔𝐀𝐑𝐈𝐎 」\n'
     texto += `┃ ✧ ${nombreUsuario}\n`
     texto += `┃ 👑 Owner: ${nombreOwner}\n`
     texto += `┃ ⚙️ Prefijo: ${prefijo}\n`
     texto += `┃ 📚 Comandos: ${totalComandos}\n`
-    texto += `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`
+    texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
 
     texto += '╭━━━━━━━━━━━━━━━━━━━━━━╮\n'
     texto += '       ✧ 𝐋𝐈𝐒𝐓𝐀 𝐃𝐄 𝐂𝐎𝐌𝐀𝐍𝐃𝐎𝐒 ✧\n'
@@ -209,8 +217,8 @@ handler.run = async (sock, m) => {
 
       texto += `╭━━━〔 ${info.emoji} ${info.nombre} 〕\n`
 
-      for (let i = 0; i < comandos.length; i++) {
-        texto += `┃ ${obtenerEmoji(i)} ${prefijo}${comandos[i]}\n`
+      for (const comando of comandos) {
+        texto += `┃ ${obtenerEmoji()} ${letraElegante(prefijo)}${letraElegante(comando)}\n`
       }
 
       texto += '╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n'
