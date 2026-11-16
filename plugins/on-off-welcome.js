@@ -87,7 +87,7 @@ Selecciona una opción:`,
 }
 
 handler.command = ['welcome']
-handler.help = ['welcome on/off']
+handler.help = ['welcome']
 handler.tags = ['on-off']
 handler.menu = true
 
