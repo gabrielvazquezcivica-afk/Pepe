@@ -14,9 +14,9 @@ import { instalarBienvenidas } from './lib/bienvenidas.js'
 
 // Configuración
 const BASE_DIR = path.dirname(fileURLToPath(import.meta.url))
-import { iniciarProtectorDB } from './lib/database-protector.js'
+// import { iniciarProtectorDB } from './lib/database-protector.js'
 
-iniciarProtectorDB(BASE_DIR)
+// iniciarProtectorDB(BASE_DIR)
 
 // Fijar la carpeta raíz del proyecto
 process.chdir(BASE_DIR)
