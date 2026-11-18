@@ -8,7 +8,10 @@ const DB_FILE = path.join(DB_DIR, 'muteados.json')
 const handler = {}
 
 const normalizar = jid =>
-    String(jid || '').replace(/:\d+@/, '@').trim()
+    String(jid || '')
+        .replace(/:\d+@/, '@')
+        .trim()
+        .toLowerCase()
 
 const limpiarNumero = jid =>
     String(jid || '').replace(/\D/g, '')
@@ -16,30 +19,58 @@ const limpiarNumero = jid =>
 const esAdmin = participante =>
     ['admin', 'superadmin'].includes(participante?.admin)
 
-const buscar = (participantes, identificadores = []) => {
+function obtenerIdsParticipante(participante) {
+    if (!participante) return []
+
+    return [
+        participante.id,
+        participante.jid,
+        participante.lid,
+        participante.phoneNumber
+    ].filter(Boolean).map(normalizar)
+}
+
+function buscar(participantes, identificadores = []) {
     const ids = identificadores.filter(Boolean).map(normalizar)
 
-    return participantes.find(p => {
-        const idsParticipante = [p.id, p.jid, p.lid]
-            .filter(Boolean)
-            .map(normalizar)
+    return participantes.find(p =>
+        obtenerIdsParticipante(p).some(id => ids.includes(id))
+    )
+}
 
-        return idsParticipante.some(id => ids.includes(id))
-    })
+async function obtenerIdsObjetivo(sock, chat, objetivo) {
+    const ids = new Set([normalizar(objetivo)])
+
+    try {
+        const metadata = await sock.groupMetadata(chat)
+
+        const participante = metadata.participants?.find(p =>
+            obtenerIdsParticipante(p).some(id => ids.has(id))
+        )
+
+        if (participante) {
+            for (const id of obtenerIdsParticipante(participante)) {
+                ids.add(id)
+            }
+        }
+    } catch (error) {
+        console.error('[UNMUTE] Error obteniendo identificadores:', error)
+    }
+
+    return [...ids].filter(Boolean)
 }
 
 function cargarDB() {
     try {
-        if (!fs.existsSync(DB_DIR)) {
-            fs.mkdirSync(DB_DIR, { recursive: true })
-        }
+        fs.mkdirSync(DB_DIR, { recursive: true })
 
         if (!fs.existsSync(DB_FILE)) {
             fs.writeFileSync(DB_FILE, '{}')
         }
 
         return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
-    } catch {
+    } catch (error) {
+        console.error('[UNMUTE] Error leyendo DB:', error)
         return {}
     }
 }
@@ -47,7 +78,8 @@ function cargarDB() {
 function guardarDB(db) {
     fs.mkdirSync(DB_DIR, { recursive: true })
 
-    const temporal = `${DB_FILE}.tmp`
+    const temporal = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`
+
     fs.writeFileSync(temporal, JSON.stringify(db, null, 2))
     fs.renameSync(temporal, DB_FILE)
 }
@@ -87,7 +119,8 @@ async function obtenerPermisos(sock, m) {
             admin: true,
             botAdmin: esAdmin(botInfo)
         }
-    } catch {
+    } catch (error) {
+        console.error('[UNMUTE] Error comprobando permisos:', error)
         return { admin: false, botAdmin: false }
     }
 }
@@ -132,21 +165,23 @@ handler.run = async (sock, m) => {
         return m.reply('> ⚠️ Menciona al usuario o responde a uno de sus mensajes.')
     }
 
+    const idsObjetivo = await obtenerIdsObjetivo(sock, chat, objetivo)
     const db = cargarDB()
-    const muteados = Array.isArray(db[chat]) ? db[chat] : []
 
-    const posicion = muteados.findIndex(
-        jid => normalizar(jid) === normalizar(objetivo)
+    const muteados = Array.isArray(db[chat])
+        ? db[chat]
+        : []
+
+    const quedan = muteados.filter(jid =>
+        !idsObjetivo.includes(normalizar(jid))
     )
 
-    if (posicion === -1) {
+    if (quedan.length === muteados.length) {
         return m.reply('> ⚠️ Ese usuario no está muteado.')
     }
 
-    muteados.splice(posicion, 1)
-
-    if (muteados.length) {
-        db[chat] = muteados
+    if (quedan.length) {
+        db[chat] = quedan
     } else {
         delete db[chat]
     }
