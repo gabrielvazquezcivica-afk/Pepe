@@ -63,8 +63,15 @@ function guardarAFK(db) {
     fs.writeFileSync(afkPath, JSON.stringify(db, null, 2))
 }
 
-// Sistema MUTE
+// SISTEMA MUTE
 const mutePath = path.join(BASE_DIR, 'database', 'muteados.json')
+
+function normalizarMuteJid(jid) {
+    return String(jid || '')
+        .replace(/:\d+@/, '@')
+        .trim()
+        .toLowerCase()
+}
 
 function leerMuteados() {
     try {
@@ -73,43 +80,58 @@ function leerMuteados() {
         const contenido = fs.readFileSync(mutePath, 'utf8')
         return contenido.trim() ? JSON.parse(contenido) : {}
     } catch (error) {
-        console.error(chalk.red('❌ Error leyendo muteados.json:'), error.message)
+        console.error(
+            chalk.red('❌ Error leyendo muteados.json:'),
+            error.message
+        )
         return {}
     }
 }
 
 async function revisarMuteado(sock, message) {
-    const chat = message.key.remoteJid
+    const chat = message.key?.remoteJid
 
     if (!chat?.endsWith('@g.us')) return false
-    if (message.key.fromMe) return false
+    if (message.key?.fromMe) return false
 
     const identificadores = [
-        message.key.participant,
-        message.key.participantAlt,
+        message.key?.participant,
+        message.key?.participantAlt,
         message.participant,
         message.sender,
         message.senderLid
-    ].filter(Boolean).map(limpiarJid)
+    ]
+        .filter(Boolean)
+        .map(normalizarMuteJid)
 
     if (!identificadores.length) return false
 
     const db = leerMuteados()
-    const muteados = (db[chat] || []).map(limpiarJid)
 
-    if (!identificadores.some(id => muteados.includes(id))) {
-        return false
-    }
+    const muteados = Array.isArray(db[chat])
+        ? db[chat].map(normalizarMuteJid)
+        : []
+
+    const estaMuteado = identificadores.some(id =>
+        muteados.includes(id)
+    )
+
+    if (!estaMuteado) return false
 
     try {
         await sock.sendMessage(chat, {
             delete: message.key
         })
-    } catch (error) {
-        console.error(chalk.red('❌ No se pudo borrar mensaje de usuario muteado:'), error.message)
-    }
 
-    return true
+        return true
+    } catch (error) {
+        console.error(
+            chalk.red('❌ No se pudo borrar mensaje de usuario muteado:'),
+            error.message
+        )
+
+        return false
+    }
 }
 
 function limpiarJid(jid = '') {
