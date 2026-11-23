@@ -138,7 +138,7 @@ handler.run = async (sock, m, args) => {
 }
 
 handler.command = ['wm']
-handler.help = ['wm', 'wm <nombre>']
+handler.help = ['wm']
 handler.tags = ['stickers']
 handler.menu = true
 
