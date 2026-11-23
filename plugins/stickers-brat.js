@@ -5,7 +5,7 @@ const API_FAA_BRAT = 'https://api-faa.my.id/faa/brathd'
 const API_FAA_BRATV = 'https://api-faa.my.id/faa/bratvid'
 
 const API_EVO = 'https://api.evogb.org/tools/brat'
-const API_EVO_KEY = 'TU_API_KEY'
+const API_EVO_KEY = 'evogb-R1Mofv5G'
 
 const handler = {}
 
