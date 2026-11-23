@@ -1,6 +1,7 @@
-import axios from 'axios'
+
 import fs from 'node:fs'
 import path from 'node:path'
+import axios from 'axios'
 
 const API_URL = 'https://api.stellarwa.xyz/sfw/interaction'
 const API_KEY = 'api-xyjFx'
@@ -87,36 +88,146 @@ const interacciones = {
   feliz: { api: 'happy', emoji: '😄', texto: 'está feliz', duo: false }
 }
 
-const handler = {}
+function limpiarJid(jid) {
+  if (!jid || typeof jid !== 'string') return null
+  return jid.trim()
+}
 
-handler.command = Object.keys(interacciones)
-handler.help = Object.entries(interacciones).map(([cmd, data]) =>
-  data.duo ? `${cmd} <@usuario>` : cmd
-)
-handler.tags = ['interacciones']
-handler.menu = true
+function obtenerSender(m) {
+  return limpiarJid(
+    m.sender ||
+    m.key?.participant ||
+    m.participant ||
+    m.key?.remoteJid
+  )
+}
 
-function obtenerArchivo(comando) {
+function extraerMensaje(m) {
+  let msg = m?.message || m?.msg || m?.key?.message || m
+
+  while (msg) {
+    if (msg.ephemeralMessage?.message) {
+      msg = msg.ephemeralMessage.message
+      continue
+    }
+
+    if (msg.viewOnceMessage?.message) {
+      msg = msg.viewOnceMessage.message
+      continue
+    }
+
+    if (msg.viewOnceMessageV2?.message) {
+      msg = msg.viewOnceMessageV2.message
+      continue
+    }
+
+    if (msg.viewOnceMessageV2Extension?.message) {
+      msg = msg.viewOnceMessageV2Extension.message
+      continue
+    }
+
+    if (msg.documentWithCaptionMessage?.message) {
+      msg = msg.documentWithCaptionMessage.message
+      continue
+    }
+
+    break
+  }
+
+  return msg || {}
+}
+
+function obtenerContextInfo(m) {
+  const mensaje = extraerMensaje(m)
+
+  const tipos = [
+    'extendedTextMessage',
+    'imageMessage',
+    'videoMessage',
+    'documentMessage',
+    'audioMessage',
+    'stickerMessage',
+    'buttonsResponseMessage',
+    'templateButtonReplyMessage',
+    'listResponseMessage',
+    'interactiveResponseMessage'
+  ]
+
+  for (const tipo of tipos) {
+    const contextInfo = mensaje?.[tipo]?.contextInfo
+    if (contextInfo) return contextInfo
+  }
+
+  return null
+}
+
+function obtenerMencion(m) {
+  const sender = obtenerSender(m)
+  const contextInfo = obtenerContextInfo(m)
+
+  const menciones = [
+    ...(Array.isArray(m.mentionedJid) ? m.mentionedJid : []),
+    ...(Array.isArray(m.mentions) ? m.mentions : []),
+    ...(Array.isArray(contextInfo?.mentionedJid) ? contextInfo.mentionedJid : [])
+  ]
+
+  const mencion = menciones
+    .map(limpiarJid)
+    .find(jid => jid && jid !== sender)
+
+  if (mencion) return mencion
+
+  return null
+}
+
+function obtenerRespondido(m) {
+  const sender = obtenerSender(m)
+  const contextInfo = obtenerContextInfo(m)
+
+  const candidatos = [
+    m.quoted?.sender,
+    m.quoted?.participant,
+    m.quoted?.key?.participant,
+    m.quoted?.key?.remoteJid,
+    m.reply?.sender,
+    m.reply?.participant,
+    contextInfo?.participant
+  ]
+
+  for (const candidato of candidatos) {
+    const jid = limpiarJid(candidato)
+
+    if (!jid) continue
+    if (jid === sender) continue
+
+    if (jid.endsWith('@g.us')) continue
+
+    return jid
+  }
+
+  return null
+}
+
+function obtenerObjetivo(m) {
+  return obtenerMencion(m) || obtenerRespondido(m)
+}
+
+function archivoCache(comando) {
   return path.join(CACHE_DIR, `${comando}.mp4`)
 }
 
-function archivoExiste(comando) {
-  const archivo = obtenerArchivo(comando)
+async function descargarMedia(comando, api) {
+  const archivo = archivoCache(comando)
 
   try {
-    return fs.existsSync(archivo) &&
-      fs.statSync(archivo).size > 0
-  } catch {
-    return false
-  }
-}
+    if (fs.existsSync(archivo)) {
+      const stat = fs.statSync(archivo)
 
-async function descargarMedia(comando, api) {
-  const archivo = obtenerArchivo(comando)
-
-  if (archivoExiste(comando)) {
-    return fs.promises.readFile(archivo)
-  }
+      if (stat.size > 0) {
+        return fs.readFileSync(archivo)
+      }
+    }
+  } catch {}
 
   const response = await axios.get(API_URL, {
     params: {
@@ -127,172 +238,189 @@ async function descargarMedia(comando, api) {
     responseType: 'arraybuffer'
   })
 
-  const contentType = response.headers['content-type'] || ''
-  let buffer
+  let buffer = Buffer.from(response.data)
 
-  const contenido = Buffer.from(response.data)
+  const contentType = response.headers?.['content-type'] || ''
 
-  const pareceJSON =
-    contentType.includes('json') ||
-    contenido.toString('utf8', 0, 1).trim() === '{'
+  if (contentType.includes('application/json')) {
+    const json = JSON.parse(buffer.toString())
 
-  if (pareceJSON) {
-    const data = JSON.parse(contenido.toString('utf8'))
+    const url =
+      json?.result_url ||
+      json?.url ||
+      json?.result ||
+      json?.data?.url ||
+      json?.data?.result_url ||
+      json?.video ||
+      json?.gif
 
-    let url =
-      data.result_url ||
-      data.url ||
-      data.result ||
-      data.data?.url ||
-      data.data?.result_url ||
-      data.video ||
-      data.gif
-
-    if (typeof url === 'object' && url !== null) {
-      url = url.url || url.result_url
+    if (!url || typeof url !== 'string') {
+      throw new Error('La API no devolvió una URL válida')
     }
 
-    if (!url) {
-      throw new Error('La API no devolvió una URL')
-    }
-
-    const descarga = await axios.get(url, {
+    const mediaResponse = await axios.get(url, {
       responseType: 'arraybuffer',
       timeout: TIMEOUT
     })
 
-    buffer = Buffer.from(descarga.data)
-  } else {
-    buffer = contenido
+    buffer = Buffer.from(mediaResponse.data)
   }
 
-  if (!buffer || !buffer.length) {
-    throw new Error('Media vacío')
+  if (!buffer || buffer.length === 0) {
+    throw new Error('El archivo descargado está vacío')
   }
 
-  await fs.promises.mkdir(CACHE_DIR, {
-    recursive: true
-  })
+  fs.mkdirSync(CACHE_DIR, { recursive: true })
 
   const temporal = `${archivo}.tmp`
 
-  await fs.promises.writeFile(temporal, buffer)
-  await fs.promises.rename(temporal, archivo)
+  fs.writeFileSync(temporal, buffer)
+  fs.renameSync(temporal, archivo)
 
   return buffer
 }
 
-// Precarga en segundo plano
 async function precargarInteracciones() {
   if (!PRELOAD_ON_START) return
 
-  await fs.promises.mkdir(CACHE_DIR, {
-    recursive: true
-  })
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true })
 
-  const pendientes = Object.entries(interacciones)
-    .filter(([comando]) => !archivoExiste(comando))
+    const pendientes = Object.entries(interacciones)
+      .filter(([comando, accion]) => {
+        const archivo = archivoCache(comando)
 
-  console.log(`[INTERACCIONES] ${pendientes.length} archivos pendientes de precarga`)
+        if (!fs.existsSync(archivo)) return true
 
-  let indice = 0
+        try {
+          return fs.statSync(archivo).size === 0
+        } catch {
+          return true
+        }
+      })
 
-  async function trabajador() {
-    while (indice < pendientes.length) {
-      const actual = pendientes[indice++]
-      const [comando, accion] = actual
+    let index = 0
 
-      try {
-        await descargarMedia(comando, accion.api)
-        console.log(`[INTERACCIONES] Guardado: ${comando}`)
-      } catch (error) {
-        console.error(`[INTERACCIONES] No se pudo precargar ${comando}: ${error.message}`)
+    async function worker() {
+      while (index < pendientes.length) {
+        const actual = index++
+        const [comando, accion] = pendientes[actual]
+
+        try {
+          await descargarMedia(comando, accion.api)
+          console.log(`✅ Interacción precargada: ${comando}`)
+        } catch (error) {
+          console.log(`⚠️ Error precargando ${comando}: ${error.message}`)
+        }
       }
     }
+
+    const workers = Array.from(
+      { length: Math.min(PRELOAD_CONCURRENCY, pendientes.length) },
+      () => worker()
+    )
+
+    await Promise.all(workers)
+
+    console.log('✅ Precarga de interacciones finalizada')
+  } catch (error) {
+    console.error('Error en precarga:', error.message)
   }
-
-  const trabajadores = Array.from(
-    { length: PRELOAD_CONCURRENCY },
-    () => trabajador()
-  )
-
-  await Promise.all(trabajadores)
-
-  console.log('[INTERACCIONES] Precarga finalizada')
 }
 
-// No bloquea el inicio del bot
-precargarInteracciones().catch(error => {
-  console.error('[INTERACCIONES] Error en precarga:', error.message)
-})
+if (PRELOAD_ON_START) {
+  precargarInteracciones().catch(console.error)
+}
+
+const handler = {}
 
 handler.run = async (sock, m, args = []) => {
   const chat = m.chat || m.key?.remoteJid
-  const comando = m.command?.toLowerCase()
+  const sender = obtenerSender(m)
+
+  if (!chat || !sender) return
+
+  const comando = (m.command || m.cmd || '').toLowerCase()
   const accion = interacciones[comando]
 
   if (!accion) return
 
-  const mencionados = m.mentionedJid || []
-  const citado = m.quoted?.sender
+  const objetivo = obtenerObjetivo(m)
 
-  let objetivo = mencionados[0] || citado
-
-  // Interacciones de dos personas
   if (accion.duo && !objetivo) {
-    return sock.sendMessage(chat, {
-      text: `❌ Debes mencionar a alguien.\n\nEjemplo: .${comando} @usuario`,
-    }, {
-      quoted: m
-    })
+    await sock.sendMessage(chat, {
+      text: `❗ Debes mencionar a alguien o responder a su mensaje para usar .${comando}\n\nEjemplo:\n.${comando} @usuario`
+    }, { quoted: m })
+
+    return
   }
-
-  const autor = m.sender
-  const nombreAutor = autor.split('@')[0]
-
-  let texto
-  let mentions
-
-  if (accion.duo) {
-    const nombreObjetivo = objetivo.split('@')[0]
-
-    texto = `✨ @${nombreAutor} ${accion.texto} @${nombreObjetivo}`
-    mentions = [autor, objetivo]
-  } else {
-    texto = `✨ @${nombreAutor} ${accion.texto}`
-    mentions = [autor]
-  }
-
-  // Reacción instantánea
-  sock.sendMessage(chat, {
-    react: {
-      text: accion.emoji,
-      key: m.key
-    }
-  }).catch(() => {})
 
   try {
-    const media = await descargarMedia(comando, accion.api)
+    await sock.sendMessage(chat, {
+      react: {
+        text: accion.emoji,
+        key: m.key
+      }
+    })
+
+    let buffer
+
+    try {
+      buffer = await descargarMedia(comando, accion.api)
+    } catch (error) {
+      console.error(`Error descargando ${comando}:`, error.message)
+
+      await sock.sendMessage(chat, {
+        text: `❌ No pude obtener la animación de *${comando}*. Intenta nuevamente más tarde.`
+      }, { quoted: m })
+
+      return
+    }
+
+    const nombreSender = `@${sender.split('@')[0]}`
+
+    let texto
+
+    if (accion.duo) {
+      const nombreObjetivo = `@${objetivo.split('@')[0]}`
+
+      texto = `${accion.emoji} ${nombreSender} ${accion.texto} ${nombreObjetivo}`
+    } else {
+      texto = `${accion.emoji} ${nombreSender} ${accion.texto}`
+    }
 
     await sock.sendMessage(chat, {
-      video: media,
-      gifPlayback: true,
+      video: buffer,
       caption: texto,
-      mentions
-    }, {
-      quoted: m
+      gifPlayback: true,
+      mentions: accion.duo ? [sender, objetivo] : [sender]
+    }, { quoted: m })
+
+    await sock.sendMessage(chat, {
+      react: {
+        text: '✅',
+        key: m.key
+      }
     })
 
   } catch (error) {
-    console.error(`[INTERACCIONES] ${comando}:`, error.message)
+    console.error(`Error en interacción ${comando}:`, error)
 
-    await sock.sendMessage(chat, {
-      text: '❌ No se pudo enviar la interacción. Intenta nuevamente.',
-      mentions
-    }, {
-      quoted: m
-    }).catch(() => {})
+    try {
+      await sock.sendMessage(chat, {
+        text: `❌ Ocurrió un error al ejecutar *${comando}*.`
+      }, { quoted: m })
+    } catch {}
   }
 }
+
+handler.command = Object.keys(interacciones)
+
+handler.help = Object.entries(interacciones).map(([comando, accion]) =>
+  accion.duo ? `${comando} <@usuario>` : comando
+)
+
+handler.tags = ['interacciones']
+handler.menu = true
 
 export default handler
