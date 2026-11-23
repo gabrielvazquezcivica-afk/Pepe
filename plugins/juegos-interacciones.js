@@ -2,7 +2,7 @@
 const handler = {}
 
 const API_URL = 'https://api.stellarwa.xyz/sfw/interaction'
-const API_KEY = 'api-hbWMB'
+const API_KEY = 'api-xyjFx'
 
 const interacciones = {
     abrazar: {
