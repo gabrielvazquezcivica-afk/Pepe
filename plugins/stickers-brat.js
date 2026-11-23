@@ -5,21 +5,15 @@ const API_FAA_BRAT = 'https://api-faa.my.id/faa/brathd'
 const API_FAA_BRATV = 'https://api-faa.my.id/faa/bratvid'
 
 const API_EVO = 'https://api.evogb.org/tools/brat'
-const API_EVO_KEY = 'evogb-R1Mofv5G'
+const API_EVO_KEY = 'TU_API_KEY'
 
 const handler = {}
-
-// ==============================
-// FAA API
-// ==============================
 
 async function generarFAA(texto, animado) {
     const response = await axios.get(
         animado ? API_FAA_BRATV : API_FAA_BRAT,
         {
-            params: {
-                text: texto
-            },
+            params: { text: texto },
             responseType: 'arraybuffer',
             timeout: 60000,
             headers: {
@@ -31,44 +25,65 @@ async function generarFAA(texto, animado) {
     const buffer = Buffer.from(response.data)
 
     if (!buffer.length) {
-        throw new Error('FAA devolvió un archivo vacío.')
+        throw new Error('FAA devolvió un archivo vacío')
     }
 
-    return buffer
+    return {
+        buffer,
+        animado
+    }
 }
 
-// ==============================
-// EvoGB API
-// ==============================
-
 async function generarEvo(texto, animado) {
-    try {
-        const response = await axios.get(API_EVO, {
-            params: {
-                text: texto,
-                animated: animado ? 'true' : 'false'
-            },
-            timeout: 60000,
-            headers: {
-                'x-api-key': API_EVO_KEY,
-                Accept: 'application/json'
-            }
-        })
+    const response = await axios.get(API_EVO, {
+        params: {
+            text: texto,
+            animated: animado ? 'true' : 'false'
+        },
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        headers: {
+            'x-api-key': API_EVO_KEY,
+            Accept: 'application/json, image/*, video/*'
+        }
+    })
 
-        const data = response.data
+    const contentType = String(
+        response.headers['content-type'] || ''
+    ).toLowerCase()
 
-        console.log(
-            '📡 Respuesta EvoGB:',
-            JSON.stringify(data, null, 2)
-        )
+    const bufferRespuesta = Buffer.from(response.data)
 
-        if (!data?.status || !data?.result_url) {
+    if (!bufferRespuesta.length) {
+        throw new Error('EvoGB devolvió una respuesta vacía')
+    }
+
+    console.log('📡 EvoGB Content-Type:', contentType)
+
+    if (contentType.includes('json')) {
+        let data
+
+        try {
+            data = JSON.parse(bufferRespuesta.toString())
+        } catch {
+            throw new Error('EvoGB devolvió un JSON inválido')
+        }
+
+        console.log('📡 Respuesta EvoGB:', JSON.stringify(data, null, 2))
+
+        const url =
+            data.result_url ||
+            data.url ||
+            data.result?.url ||
+            data.result?.result_url
+
+        if (!url) {
             throw new Error(
-                `EvoGB no devolvió una URL válida: ${JSON.stringify(data)}`
+                `EvoGB no devolvió URL: ${JSON.stringify(data)}`
             )
         }
 
-        const archivo = await axios.get(data.result_url, {
+        const archivo = await axios.get(url, {
             responseType: 'arraybuffer',
             timeout: 60000
         })
@@ -76,47 +91,82 @@ async function generarEvo(texto, animado) {
         const buffer = Buffer.from(archivo.data)
 
         if (!buffer.length) {
-            throw new Error('EvoGB devolvió un archivo vacío.')
+            throw new Error('El archivo descargado está vacío')
         }
 
-        return buffer
+        const tipoArchivo = String(
+            archivo.headers['content-type'] || ''
+        ).toLowerCase()
 
-    } catch (error) {
-        const status = error.response?.status
-
-        let respuesta = error.message
-
-        if (error.response?.data) {
-            respuesta = Buffer.isBuffer(error.response.data)
-                ? error.response.data.toString()
-                : JSON.stringify(error.response.data)
+        return {
+            buffer,
+            animado:
+                animado &&
+                (
+                    tipoArchivo.includes('video') ||
+                    tipoArchivo.includes('gif')
+                )
         }
-
-        console.error('❌ Error EvoGB:')
-        console.error('Status:', status || 'Sin status')
-        console.error('Respuesta:', respuesta)
-
-        throw new Error(
-            status
-                ? `EvoGB HTTP ${status}: ${respuesta}`
-                : respuesta
-        )
     }
-}
 
-// ==============================
-// GENERADOR PRINCIPAL
-// ==============================
+    if (
+        contentType.includes('image/') ||
+        contentType.includes('video/') ||
+        contentType.includes('application/octet-stream')
+    ) {
+        console.log('✅ EvoGB devolvió archivo directamente')
+
+        return {
+            buffer: bufferRespuesta,
+            animado: animado && (
+                contentType.includes('video/') ||
+                contentType.includes('gif')
+            )
+        }
+    }
+
+    const esPNG =
+        bufferRespuesta[0] === 0x89 &&
+        bufferRespuesta[1] === 0x50 &&
+        bufferRespuesta[2] === 0x4E &&
+        bufferRespuesta[3] === 0x47
+
+    const esJPEG =
+        bufferRespuesta[0] === 0xFF &&
+        bufferRespuesta[1] === 0xD8 &&
+        bufferRespuesta[2] === 0xFF
+
+    const esGIF =
+        bufferRespuesta.toString('ascii', 0, 3) === 'GIF'
+
+    const esWEBP =
+        bufferRespuesta.toString('ascii', 8, 12) === 'WEBP'
+
+    const esMP4 =
+        bufferRespuesta.toString('ascii', 4, 8) === 'ftyp'
+
+    if (esPNG || esJPEG || esGIF || esWEBP || esMP4) {
+        console.log('✅ EvoGB devolvió archivo binario')
+
+        return {
+            buffer: bufferRespuesta,
+            animado: animado && (esGIF || esMP4)
+        }
+    }
+
+    console.log(
+        '⚠️ Respuesta EvoGB:',
+        bufferRespuesta.toString().slice(0, 500)
+    )
+
+    throw new Error(`Formato desconocido: ${contentType}`)
+}
 
 async function generarBrat(texto, animado) {
     try {
         console.log('🟢 Intentando API FAA...')
 
-        const buffer = await generarFAA(texto, animado)
-
-        console.log('✅ Brat generado con FAA')
-
-        return buffer
+        return await generarFAA(texto, animado)
 
     } catch (errorFAA) {
         console.error('❌ FAA falló:', errorFAA.message)
@@ -124,14 +174,10 @@ async function generarBrat(texto, animado) {
         console.log('🟡 Intentando API EvoGB...')
 
         try {
-            const buffer = await generarEvo(texto, animado)
-
-            console.log('✅ Brat generado con EvoGB')
-
-            return buffer
+            return await generarEvo(texto, animado)
 
         } catch (errorEvo) {
-            console.error('❌ EvoGB también falló:', errorEvo.message)
+            console.error('❌ EvoGB falló:', errorEvo.message)
 
             throw new Error(
                 `FAA: ${errorFAA.message}\nEvoGB: ${errorEvo.message}`
@@ -139,10 +185,6 @@ async function generarBrat(texto, animado) {
         }
     }
 }
-
-// ==============================
-// COMANDO
-// ==============================
 
 handler.run = async (sock, m, args = []) => {
     const comando = String(m.command || '').toLowerCase()
@@ -172,9 +214,12 @@ handler.run = async (sock, m, args = []) => {
             }
         })
 
-        const buffer = await generarBrat(texto, animado)
+        const resultado = await generarBrat(texto, animado)
 
-        const webp = await toSticker(buffer, animado)
+        const webp = await toSticker(
+            resultado.buffer,
+            resultado.animado
+        )
 
         await sock.sendMessage(m.chat, {
             sticker: webp
@@ -201,15 +246,11 @@ handler.run = async (sock, m, args = []) => {
 
         await m.reply(
             animado
-                ? '❌ No se pudo generar el Brat animado.\n\nLas APIs FAA y EvoGB fallaron.'
-                : '❌ No se pudo generar el Brat.\n\nLas APIs FAA y EvoGB fallaron.'
+                ? '❌ No se pudo generar el Brat animado. Ambas APIs fallaron.'
+                : '❌ No se pudo generar el Brat. Ambas APIs fallaron.'
         )
     }
 }
-
-// ==============================
-// CONFIGURACIÓN DEL PLUGIN
-// ==============================
 
 handler.command = ['brat', 'bratv']
 handler.help = ['brat <texto>', 'bratv <texto>']
