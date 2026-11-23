@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const API_URL = 'https://api.stellarwa.xyz/sfw/interaction'
-const API_KEY = 'TU_API_KEY'
+const API_KEY = 'api-xyjFx'
 
 const CACHE_DIR = './media/interacciones'
 const PRELOAD_ON_START = true
