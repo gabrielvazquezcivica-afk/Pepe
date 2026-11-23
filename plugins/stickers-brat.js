@@ -5,7 +5,7 @@ const API_FAA_BRAT = 'https://api-faa.my.id/faa/brathd'
 const API_FAA_BRATV = 'https://api-faa.my.id/faa/bratvid'
 
 const API_EVO = 'https://api.evogb.org/tools/brat'
-const API_EVO_KEY = 'evogb-R1Mofv5G'
+const API_EVO_KEY = 'TU_API_KEY'
 
 const handler = {}
 
@@ -15,10 +15,7 @@ async function generarFAA(texto, animado) {
         {
             params: { text: texto },
             responseType: 'arraybuffer',
-            timeout: 60000,
-            headers: {
-                Accept: animado ? 'video/*' : 'image/*'
-            }
+            timeout: 60000
         }
     )
 
@@ -31,6 +28,63 @@ async function generarFAA(texto, animado) {
     return {
         buffer,
         animado
+    }
+}
+
+function detectarArchivo(buffer, contentType = '') {
+    contentType = contentType.toLowerCase()
+
+    const esPNG = buffer.subarray(0, 4).equals(
+        Buffer.from([0x89, 0x50, 0x4E, 0x47])
+    )
+
+    const esJPEG = buffer.subarray(0, 3).equals(
+        Buffer.from([0xFF, 0xD8, 0xFF])
+    )
+
+    const esGIF = buffer.toString('ascii', 0, 3) === 'GIF'
+
+    const esWEBP = buffer.toString('ascii', 8, 12) === 'WEBP'
+
+    const esMP4 = buffer.toString('ascii', 4, 8) === 'ftyp'
+
+    if (esMP4 || contentType.includes('video/')) {
+        return true
+    }
+
+    if (esGIF || contentType.includes('gif')) {
+        return true
+    }
+
+    if (esPNG || esJPEG) {
+        return false
+    }
+
+    if (esWEBP) {
+        return buffer.includes(Buffer.from('ANIM'))
+    }
+
+    return contentType.includes('image/') && contentType.includes('gif')
+}
+
+async function descargarArchivo(url) {
+    const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 60000
+    })
+
+    const buffer = Buffer.from(response.data)
+
+    if (!buffer.length) {
+        throw new Error('El archivo descargado está vacío')
+    }
+
+    return {
+        buffer,
+        animado: detectarArchivo(
+            buffer,
+            response.headers['content-type']
+        )
     }
 }
 
@@ -48,139 +102,79 @@ async function generarEvo(texto, animado) {
         }
     })
 
+    const buffer = Buffer.from(response.data)
     const contentType = String(
         response.headers['content-type'] || ''
     ).toLowerCase()
 
-    const bufferRespuesta = Buffer.from(response.data)
-
-    if (!bufferRespuesta.length) {
+    if (!buffer.length) {
         throw new Error('EvoGB devolvió una respuesta vacía')
     }
 
-    console.log('📡 EvoGB Content-Type:', contentType)
+    console.log('EvoGB Content-Type:', contentType)
 
-    if (contentType.includes('json')) {
+    // Respuesta JSON
+    if (
+        contentType.includes('json') ||
+        buffer[0] === 0x7B
+    ) {
         let data
 
         try {
-            data = JSON.parse(bufferRespuesta.toString())
+            data = JSON.parse(buffer.toString())
         } catch {
-            throw new Error('EvoGB devolvió un JSON inválido')
+            throw new Error('EvoGB devolvió JSON inválido')
         }
 
-        console.log('📡 Respuesta EvoGB:', JSON.stringify(data, null, 2))
+        console.log('Respuesta EvoGB:', JSON.stringify(data))
+
+        if (data.status === false) {
+            throw new Error(data.message || 'EvoGB indicó un error')
+        }
 
         const url =
             data.result_url ||
             data.url ||
-            data.result?.url ||
-            data.result?.result_url
+            data.result?.result_url ||
+            data.result?.url
 
         if (!url) {
             throw new Error(
-                `EvoGB no devolvió URL: ${JSON.stringify(data)}`
+                `No se encontró URL en la respuesta: ${JSON.stringify(data)}`
             )
         }
 
-        const archivo = await axios.get(url, {
-            responseType: 'arraybuffer',
-            timeout: 60000
-        })
-
-        const buffer = Buffer.from(archivo.data)
-
-        if (!buffer.length) {
-            throw new Error('El archivo descargado está vacío')
-        }
-
-        const tipoArchivo = String(
-            archivo.headers['content-type'] || ''
-        ).toLowerCase()
-
-        return {
-            buffer,
-            animado:
-                animado &&
-                (
-                    tipoArchivo.includes('video') ||
-                    tipoArchivo.includes('gif')
-                )
-        }
+        return descargarArchivo(url)
     }
 
-    if (
-        contentType.includes('image/') ||
-        contentType.includes('video/') ||
-        contentType.includes('application/octet-stream')
-    ) {
-        console.log('✅ EvoGB devolvió archivo directamente')
+    // Respuesta directa de imagen o video
+    console.log('EvoGB devolvió contenido binario')
 
-        return {
-            buffer: bufferRespuesta,
-            animado: animado && (
-                contentType.includes('video/') ||
-                contentType.includes('gif')
-            )
-        }
+    return {
+        buffer,
+        animado: detectarArchivo(buffer, contentType)
     }
-
-    const esPNG =
-        bufferRespuesta[0] === 0x89 &&
-        bufferRespuesta[1] === 0x50 &&
-        bufferRespuesta[2] === 0x4E &&
-        bufferRespuesta[3] === 0x47
-
-    const esJPEG =
-        bufferRespuesta[0] === 0xFF &&
-        bufferRespuesta[1] === 0xD8 &&
-        bufferRespuesta[2] === 0xFF
-
-    const esGIF =
-        bufferRespuesta.toString('ascii', 0, 3) === 'GIF'
-
-    const esWEBP =
-        bufferRespuesta.toString('ascii', 8, 12) === 'WEBP'
-
-    const esMP4 =
-        bufferRespuesta.toString('ascii', 4, 8) === 'ftyp'
-
-    if (esPNG || esJPEG || esGIF || esWEBP || esMP4) {
-        console.log('✅ EvoGB devolvió archivo binario')
-
-        return {
-            buffer: bufferRespuesta,
-            animado: animado && (esGIF || esMP4)
-        }
-    }
-
-    console.log(
-        '⚠️ Respuesta EvoGB:',
-        bufferRespuesta.toString().slice(0, 500)
-    )
-
-    throw new Error(`Formato desconocido: ${contentType}`)
 }
 
 async function generarBrat(texto, animado) {
     try {
-        console.log('🟢 Intentando API FAA...')
+        console.log('Intentando API FAA...')
 
         return await generarFAA(texto, animado)
 
     } catch (errorFAA) {
-        console.error('❌ FAA falló:', errorFAA.message)
+        console.error('FAA falló:', errorFAA.message)
 
-        console.log('🟡 Intentando API EvoGB...')
+        console.log('Intentando API EvoGB...')
 
         try {
             return await generarEvo(texto, animado)
 
         } catch (errorEvo) {
-            console.error('❌ EvoGB falló:', errorEvo.message)
+            console.error('EvoGB falló:', errorEvo.message)
 
             throw new Error(
-                `FAA: ${errorFAA.message}\nEvoGB: ${errorEvo.message}`
+                `FAA: ${errorFAA.message} | EvoGB: ${errorEvo.message}`
             )
         }
     }
@@ -235,7 +229,7 @@ handler.run = async (sock, m, args = []) => {
         })
 
     } catch (error) {
-        console.error(`❌ Error .${comando}:`, error.message)
+        console.error(`Error .${comando}:`, error.message)
 
         await sock.sendMessage(m.chat, {
             react: {
