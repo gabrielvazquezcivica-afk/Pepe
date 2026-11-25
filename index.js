@@ -935,8 +935,12 @@ async function processMessage(message, sock) {
 
 
 // Conectar socket
+
 async function attachSocket(sock) {
     activeSock = sock
+
+    // Instalar bienvenidas en cada socket nuevo.
+    instalarBienvenidas(sock)
 
     await revisarCierres(sock)
     iniciarRevisionCierres(() => activeSock)
@@ -1016,7 +1020,9 @@ async function attachSocket(sock) {
     })
 }
 
+
 // Iniciar bot
+
 async function start() {
     if (typeof config.PREFIX !== 'string' || !config.PREFIX) {
         throw new Error('Define PREFIX como texto en config.js')
@@ -1028,7 +1034,6 @@ async function start() {
     await loadPlugins()
 
     const sock = await connect()
-    instalarBienvenidas(sock)
     await attachSocket(sock)
 
     console.log(chalk.green('✅ PEPE BOT está listo.'))
@@ -1060,6 +1065,7 @@ async function start() {
         chalk.cyan('📁 Categorías: ') +
         ([...categorias].join(', ') || 'Ninguna')
     )
+
     console.log(chalk.gray('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'))
 }
 
