@@ -16,92 +16,161 @@ const handler = {}
 let PATCHED = false
 
 // ========================================
-// DIAGNÓSTICO DE MENSAJES
+// LEER CAMPOS PROTOBUF
 // ========================================
 
-function safeStructure(value, depth = 0, seen = new WeakSet()) {
-    if (value === null || value === undefined) return value
+function readVarint(buffer, state) {
+    let value = 0
+    let multiplier = 1
 
-    if (Buffer.isBuffer(value)) {
-        return `[BUFFER: ${value.length} bytes]`
-    }
+    while (state.pos < buffer.length) {
+        const byte = buffer[state.pos++]
 
-    if (value instanceof Uint8Array) {
-        return `[UINT8ARRAY: ${value.length} bytes]`
-    }
+        value += (byte & 127) * multiplier
 
-    if (typeof value !== 'object') {
-        return value
-    }
+        if (!(byte & 128)) return value
 
-    if (depth > 12) return '[MAX DEPTH]'
-    if (seen.has(value)) return '[CIRCULAR]'
+        multiplier *= 128
 
-    seen.add(value)
-
-    if (Array.isArray(value)) {
-        return value.slice(0, 20).map(item =>
-            safeStructure(item, depth + 1, seen)
-        )
-    }
-
-    const result = {}
-
-    for (const key of Object.keys(value)) {
-        if (
-            key === 'mediaKey' ||
-            key === 'fileSha256' ||
-            key === 'fileEncSha256' ||
-            key === 'messageSecret'
-        ) {
-            result[key] = '[OCULTO]'
-            continue
+        if (multiplier > Number.MAX_SAFE_INTEGER) {
+            throw new Error('Varint demasiado grande')
         }
-
-        result[key] = safeStructure(
-            value[key],
-            depth + 1,
-            seen
-        )
     }
 
-    return result
+    throw new Error('Varint incompleto')
 }
 
-function debugMessage(quoted) {
-    console.log('\n========== DEBUG WM2 ==========')
+function getField(buffer, wantedField) {
+    const state = { pos: 0 }
 
-    console.log(
-        'CLAVES:',
-        Object.keys(quoted || {})
-    )
+    while (state.pos < buffer.length) {
+        const tag = readVarint(buffer, state)
+        const field = Math.floor(tag / 8)
+        const wire = tag & 7
 
-    console.log(
-        'ESTRUCTURA:',
-        JSON.stringify(
-            safeStructure(quoted),
-            null,
-            2
-        )
-    )
+        if (wire === 0) {
+            const start = state.pos
 
-    console.log('======== FIN DEBUG WM2 ========\n')
+            while (state.pos < buffer.length) {
+                const byte = buffer[state.pos++]
+                if (!(byte & 128)) break
+            }
+
+            if (field === wantedField) {
+                return {
+                    wire,
+                    data: buffer.subarray(start, state.pos)
+                }
+            }
+        } else if (wire === 1) {
+            const start = state.pos
+            state.pos += 8
+
+            if (field === wantedField) {
+                return {
+                    wire,
+                    data: buffer.subarray(start, state.pos)
+                }
+            }
+        } else if (wire === 2) {
+            const length = readVarint(buffer, state)
+            const start = state.pos
+            const end = start + length
+
+            if (end > buffer.length) {
+                throw new Error('Campo protobuf incompleto')
+            }
+
+            state.pos = end
+
+            if (field === wantedField) {
+                return {
+                    wire,
+                    data: buffer.subarray(start, end)
+                }
+            }
+        } else if (wire === 5) {
+            const start = state.pos
+            state.pos += 4
+
+            if (field === wantedField) {
+                return {
+                    wire,
+                    data: buffer.subarray(start, state.pos)
+                }
+            }
+        } else {
+            throw new Error(`Wire type no compatible: ${wire}`)
+        }
+    }
+
+    return null
+}
+
+function getRawInput(input, length) {
+    if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
+        return Buffer.from(input)
+    }
+
+    if (input?.buf) {
+        const start = input.pos || 0
+        const end = length === undefined
+            ? input.len
+            : start + length
+
+        return Buffer.from(input.buf.subarray(start, end))
+    }
+
+    return null
 }
 
 // ========================================
-// PARCHE PROTOBUF PARA ENVÍO
+// PARCHE DE DECODIFICACIÓN Y CODIFICACIÓN
 // ========================================
 
 function patchSoundSticker() {
     if (PATCHED) return
 
-    const Sticker = proto.Message.StickerMessage
     const Message = proto.Message
-    const AudioMessage = proto.Message.AudioMessage
-    const FutureProofMessage = proto.Message.FutureProofMessage
+    const Sticker = Message.StickerMessage
+    const AudioMessage = Message.AudioMessage
+    const FutureProofMessage = Message.FutureProofMessage
 
-    if (!Sticker || !Message || !AudioMessage || !FutureProofMessage) {
-        throw new Error('No se encontró el esquema protobuf necesario.')
+    if (
+        !Sticker?.decode ||
+        !Sticker?.encode ||
+        !Message?.decode ||
+        !Message?.encode ||
+        !AudioMessage?.decode ||
+        !FutureProofMessage?.decode
+    ) {
+        throw new Error('No se encontraron las funciones protobuf necesarias.')
+    }
+
+    // ------------------------------------
+    // StickerMessage: campo 26 = audio
+    // ------------------------------------
+
+    const originalStickerDecode = Sticker.decode
+
+    Sticker.decode = function (input, length) {
+        const raw = getRawInput(input, length)
+
+        const result = originalStickerDecode.call(
+            this,
+            input,
+            length
+        )
+
+        if (raw) {
+            const field = getField(raw, 26)
+
+            if (field?.wire === 2) {
+                result.audioMessage = AudioMessage.decode(field.data)
+            }
+        }
+
+        return result
     }
 
     const originalStickerEncode = Sticker.encode
@@ -135,6 +204,33 @@ function patchSoundSticker() {
             result.audioMessage = AudioMessage.fromObject(
                 object.audioMessage
             )
+        }
+
+        return result
+    }
+
+    // ------------------------------------
+    // Message: campo 134 = audioSticker
+    // ------------------------------------
+
+    const originalMessageDecode = Message.decode
+
+    Message.decode = function (input, length) {
+        const raw = getRawInput(input, length)
+
+        const result = originalMessageDecode.call(
+            this,
+            input,
+            length
+        )
+
+        if (raw) {
+            const field = getField(raw, 134)
+
+            if (field?.wire === 2) {
+                result.audioStickerMessage =
+                    FutureProofMessage.decode(field.data)
+            }
         }
 
         return result
@@ -180,18 +276,21 @@ function patchSoundSticker() {
     }
 
     PATCHED = true
+
+    console.log('[WM2] Parche protobuf instalado correctamente.')
 }
 
+// IMPORTANTE: se instala al cargar el plugin,
+// no cuando el usuario ejecuta el comando.
+patchSoundSticker()
+
 // ========================================
-// DETECTAR STICKER CON AUDIO
+// BUSCAR STICKER CON AUDIO
 // ========================================
 
 function findSoundSticker(message) {
     const visited = new Set()
-    const stickers = []
-    const audios = []
-
-    let hasAudioStickerWrapper = false
+    const results = []
 
     function scan(value, depth = 0) {
         if (!value || typeof value !== 'object') return
@@ -206,26 +305,21 @@ function findSoundSticker(message) {
             return
         }
 
-        if (value.audioStickerMessage) {
-            hasAudioStickerWrapper = true
-            scan(value.audioStickerMessage, depth + 1)
+        if (value.stickerMessage?.audioMessage) {
+            results.push({
+                sticker: value.stickerMessage,
+                audio: value.stickerMessage.audioMessage
+            })
+        }
+
+        const wrapper = value.audioStickerMessage
+
+        if (wrapper) {
+            scan(wrapper.message, depth + 1)
         }
 
         if (value.stickerMessage) {
-            stickers.push(value.stickerMessage)
-
-            if (value.stickerMessage.audioMessage) {
-                audios.push({
-                    sticker: value.stickerMessage,
-                    audio: value.stickerMessage.audioMessage
-                })
-            }
-        }
-
-        if (value.audioMessage) {
-            audios.push({
-                audio: value.audioMessage
-            })
+            scan(value.stickerMessage, depth + 1)
         }
 
         const wrappers = [
@@ -246,24 +340,7 @@ function findSoundSticker(message) {
 
     scan(message)
 
-    const direct = audios.find(
-        item => item.sticker && item.audio
-    )
-
-    if (direct) return direct
-
-    if (hasAudioStickerWrapper && stickers.length === 1) {
-        const audio = audios.find(item => item.audio)?.audio
-
-        if (audio) {
-            return {
-                sticker: stickers[0],
-                audio
-            }
-        }
-    }
-
-    return null
+    return results[0] || null
 }
 
 // ========================================
@@ -337,17 +414,22 @@ handler.run = async (sock, m, args = []) => {
         }, { quoted: m })
     }
 
-    // Mostrar estructura real recibida por Baileys
-    debugMessage(quoted)
-
     const sound = findSoundSticker(quoted)
 
     if (!sound) {
+        console.log(
+            '[WM2] Estructura recibida:',
+            JSON.stringify(quoted, (key, value) => {
+                if (Buffer.isBuffer(value)) return '[BUFFER]'
+                if (value instanceof Uint8Array) return '[UINT8ARRAY]'
+                return value
+            }, 2)
+        )
+
         return sock.sendMessage(from, {
             text:
                 '❌ No pude detectar el audio de ese sticker.\n\n' +
-                'Asegúrate de responder directamente al sticker creado con *.sa*.\n\n' +
-                '📋 Se guardó la estructura del mensaje en la consola de Pepe Bot.'
+                'Reinicia Pepe Bot para cargar el parche y vuelve a probar.'
         }, { quoted: m })
     }
 
@@ -362,8 +444,6 @@ handler.run = async (sock, m, args = []) => {
     let output
 
     try {
-        patchSoundSticker()
-
         await sock.sendMessage(from, {
             react: {
                 text: '🎵',
@@ -388,6 +468,8 @@ handler.run = async (sock, m, args = []) => {
         const img = new webp.Image()
         await img.load(input)
 
+        // Solo cambia los metadatos EXIF.
+        // No modifica los fotogramas de la animación.
         img.exif = createExif(texto, id)
 
         await img.save(output)
@@ -405,10 +487,11 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No se pudo preparar el sticker.')
         }
 
+        // Adjuntar el AudioMessage recuperado
         prepared.stickerMessage.audioMessage = audio
 
         const message = {
-            __proto__: prepared,
+            ...prepared,
             audioStickerMessage: {
                 message: prepared
             },
@@ -429,7 +512,7 @@ handler.run = async (sock, m, args = []) => {
         })
 
     } catch (error) {
-        console.error('Error en .wm2:', error)
+        console.error('[WM2] Error:', error)
 
         await sock.sendMessage(from, {
             text:
