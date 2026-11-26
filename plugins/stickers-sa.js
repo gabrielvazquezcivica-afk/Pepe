@@ -2,7 +2,6 @@
 import {
     downloadMediaMessage,
     prepareWAMessageMedia,
-    generateWAMessageFromContent,
     proto
 } from '@whiskeysockets/baileys'
 
@@ -11,53 +10,143 @@ import { toSticker } from '../lib/sticker.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
-const AUDIO_MIMETYPE = 'audio/ogg; codecs=opus'
 const MAX_SECONDS = 10
-
-const pendingAudio = new Map()
-const PATCHED = Symbol.for('pepe.soundSticker.patched')
+const AUDIO_MIMETYPE = 'audio/ogg; codecs=opus'
 
 // ======================================
-// PARCHE PARA ADJUNTAR AUDIO AL STICKER
+// PARCHE PROTOBUF PARA STICKERS CON AUDIO
 // ======================================
 
-function installStickerAudioPatch() {
-    const StickerMessage = proto.Message.StickerMessage
+function patchSoundSticker() {
+    const Msg = proto.Message
 
-    if (!StickerMessage?.encode) {
-        throw new Error('No se encontró el codificador StickerMessage.')
+    if (!Msg || Msg.__soundStickerPatched) return
+
+    const Sticker = Msg.StickerMessage
+
+    if (!Sticker?.encode || !Msg.encode || !Msg.FutureProofMessage) {
+        throw new Error('Protobuf de Baileys incompatible con stickers de sonido.')
     }
 
-    if (StickerMessage.encode[PATCHED]) return
+    // Campo 26: audioMessage dentro de StickerMessage
+    const originalStickerEncode = Sticker.encode
 
-    const originalEncode = StickerMessage.encode
+    Sticker.encode = function (message, writer) {
+        const audio = message?.audioMessage
 
-    const patchedEncode = function (message, writer) {
-        const result = originalEncode.call(this, message, writer)
+        if (audio) delete message.audioMessage
 
-        if (message?.fileSha256) {
-            const key = Buffer.from(message.fileSha256).toString('base64')
-            const audio = pendingAudio.get(key)
+        const result = originalStickerEncode.call(
+            this,
+            message,
+            writer
+        )
 
-            if (audio) {
-                // Campo 26 de StickerMessage
-                result.uint32(210).bytes(audio)
-            }
+        if (audio) {
+            message.audioMessage = audio
+
+            Msg.AudioMessage.encode(
+                audio,
+                result.uint32(210).fork()
+            ).ldelim()
         }
 
         return result
     }
 
-    patchedEncode[PATCHED] = true
-    StickerMessage.encode = patchedEncode
+    const originalStickerFromObject = Sticker.fromObject
+
+    if (originalStickerFromObject) {
+        Sticker.fromObject = function (object) {
+            const result = originalStickerFromObject.call(
+                this,
+                object
+            )
+
+            if (object?.audioMessage) {
+                result.audioMessage = Msg.AudioMessage.fromObject(
+                    object.audioMessage
+                )
+            }
+
+            return result
+        }
+    }
+
+    // Campo 134: audioStickerMessage dentro de Message
+    const originalMessageEncode = Msg.encode
+
+    Msg.encode = function (message, writer) {
+        const wrapper = message?.audioStickerMessage
+
+        if (wrapper) {
+            delete message.stickerMessage
+            delete message.audioStickerMessage
+        }
+
+        const result = originalMessageEncode.call(
+            this,
+            message,
+            writer
+        )
+
+        if (wrapper) {
+            message.audioStickerMessage = wrapper
+
+            Msg.FutureProofMessage.encode(
+                wrapper,
+                result.uint32(1074).fork()
+            ).ldelim()
+        }
+
+        return result
+    }
+
+    const originalMessageFromObject = Msg.fromObject
+
+    if (originalMessageFromObject) {
+        Msg.fromObject = function (object) {
+            const result = originalMessageFromObject.call(
+                this,
+                object
+            )
+
+            if (object?.audioStickerMessage) {
+                const wrapper = object.audioStickerMessage
+                const inner = wrapper.message || wrapper
+
+                const audio =
+                    inner?.stickerMessage?.audioMessage
+
+                if (audio && inner.stickerMessage) {
+                    inner.stickerMessage.audioMessage = audio
+                }
+
+                result.audioStickerMessage = {
+                    message: inner
+                }
+
+                delete result.stickerMessage
+
+                if (inner) {
+                    Object.setPrototypeOf(result, inner)
+                }
+            }
+
+            return result
+        }
+    }
+
+    Msg.__soundStickerPatched = true
 }
 
-installStickerAudioPatch()
+patchSoundSticker()
 
 // ======================================
 // DESENVOLVER MENSAJES
@@ -80,18 +169,25 @@ function unwrapMessage(message) {
         }
     }
 
-    return msg
+    return msg || {}
 }
+
+// ======================================
+// DETECTAR VIDEO DIRECTO O CITADO
+// ======================================
 
 function getMediaMessage(m) {
     const current = unwrapMessage(m.message || {})
 
     const context =
         m.msg?.contextInfo ||
+        current.extendedTextMessage?.contextInfo ||
         m.message?.extendedTextMessage?.contextInfo ||
         {}
 
-    const quoted = unwrapMessage(context.quotedMessage || {})
+    const quoted = unwrapMessage(
+        context.quotedMessage || {}
+    )
 
     if (current.videoMessage) {
         return {
@@ -118,7 +214,30 @@ function getMediaMessage(m) {
 }
 
 // ======================================
-// GENERAR AUDIO OPUS
+// DURACIÓN REAL DEL VIDEO
+// ======================================
+
+async function getVideoDuration(input) {
+    const { stdout } = await execFileAsync('ffprobe', [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        input
+    ], {
+        timeout: 15000
+    })
+
+    const duration = Number(stdout.trim())
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+        throw new Error('No se pudo determinar la duración del video.')
+    }
+
+    return Math.min(duration, MAX_SECONDS)
+}
+
+// ======================================
+// EXTRAER AUDIO OPUS
 // ======================================
 
 async function extractAudio(input, output, seconds) {
@@ -128,11 +247,15 @@ async function extractAudio(input, output, seconds) {
         '-map', '0:a:0',
         '-vn',
         '-t', String(seconds),
+        '-af', 'aresample=48000:async=1:first_pts=0',
         '-ac', '1',
         '-ar', '48000',
         '-c:a', 'libopus',
-        '-b:a', '32k',
-        '-application', 'voip',
+        '-b:a', '48k',
+        '-vbr', 'on',
+        '-compression_level', '10',
+        '-application', 'audio',
+        '-avoid_negative_ts', 'make_zero',
         '-map_metadata', '-1',
         '-f', 'ogg',
         output
@@ -140,157 +263,155 @@ async function extractAudio(input, output, seconds) {
         timeout: 90000,
         maxBuffer: 10 * 1024 * 1024
     })
+
+    const stat = await fs.stat(output)
+
+    if (stat.size < 200) {
+        throw new Error('El audio generado está vacío o incompleto.')
+    }
 }
 
 // ======================================
 // GENERAR WAVEFORM
 // ======================================
 
+async function getWaveform(audioPath, tempDir) {
+    const pcmPath = path.join(tempDir, 'waveform.pcm')
 
-async function getWaveform(audioPath) {
-    const pcmPath = audioPath.replace(/\.ogg$/i, '.pcm')
+    await execFileAsync('ffmpeg', [
+        '-y',
+        '-i', audioPath,
+        '-vn',
+        '-f', 's16le',
+        '-ac', '1',
+        '-ar', '8000',
+        pcmPath
+    ], {
+        timeout: 60000,
+        maxBuffer: 10 * 1024 * 1024
+    })
 
-    try {
-        await execFileAsync('ffmpeg', [
-            '-y',
-            '-i', audioPath,
-            '-vn',
-            '-f', 's16le',
-            '-ac', '1',
-            '-ar', '8000',
-            pcmPath
-        ], {
-            timeout: 60000,
-            maxBuffer: 10 * 1024 * 1024
-        })
+    const pcm = await fs.readFile(pcmPath)
+    const samples = Math.floor(pcm.length / 2)
 
-        const pcm = await fs.readFile(pcmPath)
-
-        const samples = Math.floor(pcm.length / 2)
-        const bars = 64
-        const levels = new Array(bars).fill(0)
-
-        if (!samples) {
-            throw new Error('No se pudo generar la forma de onda.')
-        }
-
-        const perBar = Math.max(1, Math.floor(samples / bars))
-
-        for (let bar = 0; bar < bars; bar++) {
-            const from = bar * perBar
-            const to = Math.min(samples, from + perBar)
-
-            let sum = 0
-
-            for (let i = from; i < to; i++) {
-                sum += Math.abs(pcm.readInt16LE(i * 2))
-            }
-
-            levels[bar] = to > from
-                ? sum / (to - from)
-                : 0
-        }
-
-        const peak = Math.max(...levels) || 1
-
-        return Uint8Array.from(
-            levels.map(value =>
-                Math.round(value / peak * 100)
-            )
-        )
-
-    } finally {
-        await fs.rm(pcmPath, { force: true }).catch(() => {})
+    if (!samples) {
+        throw new Error('No se pudo generar la forma de onda.')
     }
+
+    const bars = 64
+    const levels = new Array(bars).fill(0)
+    const perBar = Math.max(1, Math.floor(samples / bars))
+
+    for (let bar = 0; bar < bars; bar++) {
+        const from = bar * perBar
+        const to = Math.min(samples, from + perBar)
+
+        let sum = 0
+
+        for (let i = from; i < to; i++) {
+            sum += Math.abs(pcm.readInt16LE(i * 2))
+        }
+
+        levels[bar] = to > from
+            ? sum / (to - from)
+            : 0
+    }
+
+    const peak = Math.max(...levels) || 1
+
+    return Buffer.from(
+        levels.map(value =>
+            Math.round((value / peak) * 100)
+        )
+    )
 }
 
+// ======================================
+// PREPARAR AUDIO PARA WHATSAPP
+// ======================================
+
+async function prepareSound(sock, audioPath, tempDir, duration) {
+    const audioBuffer = await fs.readFile(audioPath)
+    const waveform = await getWaveform(audioPath, tempDir)
+
+    const prepared = await prepareWAMessageMedia(
+        {
+            audio: audioBuffer,
+            mimetype: AUDIO_MIMETYPE,
+            ptt: true
+        },
+        {
+            upload: sock.waUploadToServer
+        }
+    )
+
+    const audio = prepared.audioMessage
+
+    if (!audio?.url || !audio?.mediaKey || !audio?.fileSha256) {
+        throw new Error('WhatsApp no preparó correctamente el audio.')
+    }
+
+    audio.mimetype = AUDIO_MIMETYPE
+    audio.ptt = true
+    audio.seconds = Math.max(
+        1,
+        Math.min(MAX_SECONDS, Math.round(duration))
+    )
+    audio.waveform = waveform
+
+    return audio
+}
 
 // ======================================
 // ENVIAR STICKER CON SONIDO
 // ======================================
 
-async function sendSoundSticker(sock, chat, webp, audioPath, seconds, quoted) {
-    const audioBuffer = await fs.readFile(audioPath)
+async function sendSoundSticker(sock, chat, webp, audio, quoted) {
+    const prepared = await prepareWAMessageMedia(
+        {
+            sticker: webp,
+            isAnimated: true
+        },
+        {
+            upload: sock.waUploadToServer
+        }
+    )
 
-    const uploadOptions = {
-        upload: sock.waUploadToServer
+    const sticker = prepared.stickerMessage
+
+    if (!sticker?.fileSha256 || !sticker?.url) {
+        throw new Error('No se pudo preparar el sticker.')
     }
-
-    const uploadedAudio = await prepareWAMessageMedia({
-        audio: audioBuffer,
-        mimetype: AUDIO_MIMETYPE,
-        seconds
-    }, uploadOptions)
-
-    const uploadedSticker = await prepareWAMessageMedia({
-        sticker: webp,
-        isAnimated: true
-    }, uploadOptions)
-
-    const audio = uploadedAudio.audioMessage
-    const sticker = uploadedSticker.stickerMessage
-
-    const waveform = await getWaveform(audioPath)
-
-    const audioMessageBytes = proto.Message.AudioMessage.encode(
-        proto.Message.AudioMessage.create({
-            url: audio.url,
-            mimetype: AUDIO_MIMETYPE,
-            fileSha256: audio.fileSha256,
-            fileLength: audio.fileLength,
-            seconds,
-            ptt: true,
-            mediaKey: audio.mediaKey,
-            fileEncSha256: audio.fileEncSha256,
-            directPath: audio.directPath,
-            mediaKeyTimestamp:
-                audio.mediaKeyTimestamp || Math.floor(Date.now() / 1000),
-            waveform
-        })
-    ).finish()
 
     sticker.isAnimated = true
-    sticker.width = 320
-    sticker.height = 320
+    sticker.mimetype = 'image/webp'
+    sticker.audioMessage = audio
 
-    const stickerKey = Buffer
-        .from(sticker.fileSha256)
-        .toString('base64')
-
-    pendingAudio.set(stickerKey, audioMessageBytes)
-
-    try {
-        const ownJid =
-            chat.endsWith('@lid') && sock.user?.lid
-                ? sock.user.lid
-                : sock.user?.id
-
-        const options = { quoted }
-
-        if (ownJid) options.userJid = ownJid
-
-        const message = generateWAMessageFromContent(
-            chat,
-            { stickerMessage: sticker },
-            options
-        )
-
-        // Comprobar que el audio quedó dentro del sticker
-        const encoded = proto.Message.encode(message.message).finish()
-
-        if (!encoded.length) {
-            throw new Error('No se pudo codificar el sticker.')
+    if (quoted?.key?.id) {
+        sticker.contextInfo = {
+            stanzaId: quoted.key.id,
+            participant: quoted.key.participant,
+            remoteJid: chat
         }
-
-        await sock.relayMessage(
-            chat,
-            message.message,
-            { messageId: message.key.id }
-        )
-
-    } finally {
-        pendingAudio.delete(stickerKey)
     }
+
+    const message = {
+        __proto__: prepared,
+        audioStickerMessage: {
+            message: prepared
+        },
+        messageContextInfo: {
+            messageSecret: crypto.randomBytes(32)
+        }
+    }
+
+    await sock.relayMessage(
+        chat,
+        message,
+        {
+            messageId: crypto.randomBytes(10).toString('hex')
+        }
+    )
 }
 
 // ======================================
@@ -308,14 +429,6 @@ handler.run = async (sock, m) => {
         if (!media) {
             return m.reply(
                 '🐸 Envía un video con *.sa* o responde a un video con *.sa*.'
-            )
-        }
-
-        const seconds = Number(media.video.seconds || 0)
-
-        if (!seconds || seconds > MAX_SECONDS) {
-            return m.reply(
-                '❌ El video debe durar entre 1 y 10 segundos.'
             )
         }
 
@@ -343,21 +456,43 @@ handler.run = async (sock, m) => {
             }
         )
 
+        if (!Buffer.isBuffer(buffer) || !buffer.length) {
+            throw new Error('No se pudo descargar el video.')
+        }
+
         await fs.writeFile(input, buffer)
 
-        // Extraer el audio original
-        await extractAudio(input, audioPath, seconds)
+        // Medir duración real
+        const duration = await getVideoDuration(input)
 
-        // Convertir el video a WebP animado
+        if (duration > MAX_SECONDS) {
+            throw new Error('El video supera los 10 segundos.')
+        }
+
+        // Extraer audio y validar que exista
+        await extractAudio(input, audioPath, duration)
+
+        // Convertir el video a sticker animado
         const webp = await toSticker(buffer, true)
 
-        // Enviar un único sticker con su audio incorporado
+        if (!Buffer.isBuffer(webp) || !webp.length) {
+            throw new Error('No se pudo generar el WebP.')
+        }
+
+        // Preparar audio compatible
+        const audio = await prepareSound(
+            sock,
+            audioPath,
+            tempDir,
+            duration
+        )
+
+        // Enviar un único sticker con sonido
         await sendSoundSticker(
             sock,
             m.chat,
             webp,
-            audioPath,
-            seconds,
+            audio,
             m
         )
 
@@ -371,9 +506,16 @@ handler.run = async (sock, m) => {
     } catch (error) {
         console.error('Error en .sa:', error)
 
+        await sock.sendMessage(m.chat, {
+            react: {
+                text: '❌',
+                key: m.key
+            }
+        }).catch(() => {})
+
         await m.reply(
             '❌ No se pudo crear el sticker con sonido.\n\n' +
-            'Comprueba que el video tenga audio.'
+            'Verifica que el video tenga audio y que FFmpeg y FFprobe estén instalados.'
         )
 
     } finally {
