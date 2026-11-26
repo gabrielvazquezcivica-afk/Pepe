@@ -146,49 +146,64 @@ async function extractAudio(input, output, seconds) {
 // GENERAR WAVEFORM
 // ======================================
 
+
 async function getWaveform(audioPath) {
-    const { stdout } = await execFileAsync('ffmpeg', [
-        '-i', audioPath,
-        '-vn',
-        '-f', 's16le',
-        '-ac', '1',
-        '-ar', '8000',
-        'pipe:1'
-    ], {
-        timeout: 60000,
-        maxBuffer: 10 * 1024 * 1024
-    })
+    const pcmPath = audioPath.replace(/\.ogg$/i, '.pcm')
 
-    const pcm = stdout
-    const samples = Math.floor(pcm.length / 2)
-    const bars = 64
-    const levels = new Array(bars).fill(0)
+    try {
+        await execFileAsync('ffmpeg', [
+            '-y',
+            '-i', audioPath,
+            '-vn',
+            '-f', 's16le',
+            '-ac', '1',
+            '-ar', '8000',
+            pcmPath
+        ], {
+            timeout: 60000,
+            maxBuffer: 10 * 1024 * 1024
+        })
 
-    if (!samples) {
-        throw new Error('No se pudo generar la forma de onda.')
-    }
+        const pcm = await fs.readFile(pcmPath)
 
-    const perBar = Math.max(1, Math.floor(samples / bars))
+        const samples = Math.floor(pcm.length / 2)
+        const bars = 64
+        const levels = new Array(bars).fill(0)
 
-    for (let bar = 0; bar < bars; bar++) {
-        const from = bar * perBar
-        const to = Math.min(samples, from + perBar)
-
-        let sum = 0
-
-        for (let i = from; i < to; i++) {
-            sum += Math.abs(pcm.readInt16LE(i * 2))
+        if (!samples) {
+            throw new Error('No se pudo generar la forma de onda.')
         }
 
-        levels[bar] = to > from ? sum / (to - from) : 0
+        const perBar = Math.max(1, Math.floor(samples / bars))
+
+        for (let bar = 0; bar < bars; bar++) {
+            const from = bar * perBar
+            const to = Math.min(samples, from + perBar)
+
+            let sum = 0
+
+            for (let i = from; i < to; i++) {
+                sum += Math.abs(pcm.readInt16LE(i * 2))
+            }
+
+            levels[bar] = to > from
+                ? sum / (to - from)
+                : 0
+        }
+
+        const peak = Math.max(...levels) || 1
+
+        return Uint8Array.from(
+            levels.map(value =>
+                Math.round(value / peak * 100)
+            )
+        )
+
+    } finally {
+        await fs.rm(pcmPath, { force: true }).catch(() => {})
     }
-
-    const peak = Math.max(...levels) || 1
-
-    return Uint8Array.from(
-        levels.map(value => Math.round(value / peak * 100))
-    )
 }
+
 
 // ======================================
 // ENVIAR STICKER CON SONIDO
