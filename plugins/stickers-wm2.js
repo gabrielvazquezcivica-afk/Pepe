@@ -16,7 +16,7 @@ const handler = {}
 let PATCHED = false
 
 // ========================================
-// PARCHE PARA STICKERS CON AUDIO
+// PARCHE PROTOBUF
 // ========================================
 
 function patchSoundSticker() {
@@ -27,11 +27,10 @@ function patchSoundSticker() {
     const AudioMessage = proto.Message.AudioMessage
     const FutureProofMessage = proto.Message.FutureProofMessage
 
-    if (!Sticker || !AudioMessage || !FutureProofMessage) {
+    if (!Sticker || !Message || !AudioMessage || !FutureProofMessage) {
         throw new Error('No se encontró el esquema protobuf necesario.')
     }
 
-    // Campo 26: AudioMessage dentro de StickerMessage
     const originalStickerEncode = Sticker.encode
 
     Sticker.encode = function (message, writer) {
@@ -68,7 +67,6 @@ function patchSoundSticker() {
         return result
     }
 
-    // Campo 134: envoltorio audioStickerMessage
     const originalMessageEncode = Message.encode
 
     Message.encode = function (message, writer) {
@@ -112,50 +110,92 @@ function patchSoundSticker() {
 }
 
 // ========================================
-// BUSCAR STICKER Y AUDIO
+// DETECTAR STICKER Y AUDIO
 // ========================================
 
-function unwrapMessage(message) {
-    if (!message) return null
-
-    return (
-        message.ephemeralMessage?.message ||
-        message.viewOnceMessage?.message ||
-        message.viewOnceMessageV2?.message ||
-        message.documentWithCaptionMessage?.message ||
-        message
-    )
-}
-
 function findSoundSticker(message) {
-    const unwrapped = unwrapMessage(message)
+    const visited = new Set()
+    const stickers = []
+    const audios = []
 
-    if (!unwrapped) return null
+    let hasAudioStickerWrapper = false
 
-    // Formato especial de .sa
-    const wrapper = unwrapped.audioStickerMessage
+    function scan(value, depth = 0) {
+        if (!value || typeof value !== 'object') return
+        if (depth > 20 || visited.has(value)) return
 
-    if (wrapper) {
-        const inner = unwrapMessage(wrapper.message)
+        visited.add(value)
 
-        const sticker =
-            inner?.stickerMessage ||
-            inner?.message?.stickerMessage
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                scan(item, depth + 1)
+            }
+            return
+        }
 
-        const audio = sticker?.audioMessage
+        if (value.audioStickerMessage) {
+            hasAudioStickerWrapper = true
+            scan(value.audioStickerMessage, depth + 1)
+        }
 
-        if (sticker && audio) {
-            return { sticker, audio }
+        if (value.stickerMessage) {
+            stickers.push(value.stickerMessage)
+
+            if (value.stickerMessage.audioMessage) {
+                audios.push({
+                    sticker: value.stickerMessage,
+                    audio: value.stickerMessage.audioMessage
+                })
+            }
+        }
+
+        if (value.audioMessage) {
+            audios.push({
+                audio: value.audioMessage
+            })
+        }
+
+        if (value.ephemeralMessage) {
+            scan(value.ephemeralMessage, depth + 1)
+        }
+
+        if (value.viewOnceMessage) {
+            scan(value.viewOnceMessage, depth + 1)
+        }
+
+        if (value.viewOnceMessageV2) {
+            scan(value.viewOnceMessageV2, depth + 1)
+        }
+
+        if (value.documentWithCaptionMessage) {
+            scan(value.documentWithCaptionMessage, depth + 1)
+        }
+
+        if (value.message) {
+            scan(value.message, depth + 1)
+        }
+
+        if (value.content) {
+            scan(value.content, depth + 1)
         }
     }
 
-    // Formato directo
-    const sticker = unwrapped.stickerMessage
+    scan(message)
 
-    if (sticker?.audioMessage) {
-        return {
-            sticker,
-            audio: sticker.audioMessage
+    // Audio dentro del propio StickerMessage
+    const direct = audios.find(item => item.sticker && item.audio)
+
+    if (direct) return direct
+
+    // Audio separado dentro del envoltorio especial
+    if (hasAudioStickerWrapper && stickers.length === 1) {
+        const audio = audios.find(item => item.audio)?.audio
+
+        if (audio) {
+            return {
+                sticker: stickers[0],
+                audio
+            }
         }
     }
 
@@ -163,7 +203,7 @@ function findSoundSticker(message) {
 }
 
 // ========================================
-// DESCARGAR STICKER
+// DESCARGAR WEBP
 // ========================================
 
 async function downloadSticker(sticker) {
@@ -182,7 +222,7 @@ async function downloadSticker(sticker) {
 }
 
 // ========================================
-// METADATOS WEBP
+// CREAR EXIF
 // ========================================
 
 function createExif(text, id) {
@@ -237,7 +277,7 @@ handler.run = async (sock, m, args = []) => {
 
     if (!sound) {
         return sock.sendMessage(from, {
-            text: '❌ Ese sticker no contiene audio compatible.\n\n🐸 Este comando solamente funciona con stickers creados con *.sa*.'
+            text: '❌ No pude detectar el audio de ese sticker.\n\nAsegúrate de responder directamente al sticker con sonido creado con *.sa*.'
         }, { quoted: m })
     }
 
@@ -278,13 +318,14 @@ handler.run = async (sock, m, args = []) => {
         const img = new webp.Image()
         await img.load(input)
 
+        // Cambiar EXIF sin modificar los fotogramas
         img.exif = createExif(texto, id)
 
         await img.save(output)
 
         const resultado = fs.readFileSync(output)
 
-        // Preparar y subir el WebP modificado
+        // Preparar el sticker modificado
         const prepared = await prepareWAMessageMedia(
             { sticker: resultado },
             {
@@ -296,10 +337,9 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No se pudo preparar el sticker.')
         }
 
-        // Restaurar el AudioMessage original
+        // Adjuntar el audio original
         prepared.stickerMessage.audioMessage = audio
 
-        // Enviar con el envoltorio especial de audioStickerMessage
         const message = {
             __proto__: prepared,
             audioStickerMessage: {
@@ -325,7 +365,8 @@ handler.run = async (sock, m, args = []) => {
         console.error('Error en .wm2:', error)
 
         await sock.sendMessage(from, {
-            text: '❌ No se pudieron modificar los metadatos del sticker con audio.'
+            text: '❌ Error al modificar el sticker con audio.\n\n' +
+                `Detalles: ${error.message}`
         }, { quoted: m })
 
     } finally {
@@ -340,7 +381,7 @@ handler.run = async (sock, m, args = []) => {
 }
 
 handler.command = ['wm2']
-handler.help = ['wm2']
+handler.help = ['wm2 <stickers con audio>']
 handler.tags = ['stickers']
 handler.menu = true
 
