@@ -515,7 +515,7 @@ handler.run = async (sock, m) => {
 
         await m.reply(
             '❌ No se pudo crear el sticker con sonido.\n\n' +
-            'Verifica que el video tenga audio y que FFmpeg y FFprobe estén instalados.'
+            'Verifica que el video tenga audio.'
         )
 
     } finally {
