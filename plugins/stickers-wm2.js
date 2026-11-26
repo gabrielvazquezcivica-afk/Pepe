@@ -16,7 +16,80 @@ const handler = {}
 let PATCHED = false
 
 // ========================================
-// PARCHE PROTOBUF
+// DIAGNÓSTICO DE MENSAJES
+// ========================================
+
+function safeStructure(value, depth = 0, seen = new WeakSet()) {
+    if (value === null || value === undefined) return value
+
+    if (Buffer.isBuffer(value)) {
+        return `[BUFFER: ${value.length} bytes]`
+    }
+
+    if (value instanceof Uint8Array) {
+        return `[UINT8ARRAY: ${value.length} bytes]`
+    }
+
+    if (typeof value !== 'object') {
+        return value
+    }
+
+    if (depth > 12) return '[MAX DEPTH]'
+    if (seen.has(value)) return '[CIRCULAR]'
+
+    seen.add(value)
+
+    if (Array.isArray(value)) {
+        return value.slice(0, 20).map(item =>
+            safeStructure(item, depth + 1, seen)
+        )
+    }
+
+    const result = {}
+
+    for (const key of Object.keys(value)) {
+        if (
+            key === 'mediaKey' ||
+            key === 'fileSha256' ||
+            key === 'fileEncSha256' ||
+            key === 'messageSecret'
+        ) {
+            result[key] = '[OCULTO]'
+            continue
+        }
+
+        result[key] = safeStructure(
+            value[key],
+            depth + 1,
+            seen
+        )
+    }
+
+    return result
+}
+
+function debugMessage(quoted) {
+    console.log('\n========== DEBUG WM2 ==========')
+
+    console.log(
+        'CLAVES:',
+        Object.keys(quoted || {})
+    )
+
+    console.log(
+        'ESTRUCTURA:',
+        JSON.stringify(
+            safeStructure(quoted),
+            null,
+            2
+        )
+    )
+
+    console.log('======== FIN DEBUG WM2 ========\n')
+}
+
+// ========================================
+// PARCHE PROTOBUF PARA ENVÍO
 // ========================================
 
 function patchSoundSticker() {
@@ -110,7 +183,7 @@ function patchSoundSticker() {
 }
 
 // ========================================
-// DETECTAR STICKER Y AUDIO
+// DETECTAR STICKER CON AUDIO
 // ========================================
 
 function findSoundSticker(message) {
@@ -155,39 +228,30 @@ function findSoundSticker(message) {
             })
         }
 
-        if (value.ephemeralMessage) {
-            scan(value.ephemeralMessage, depth + 1)
-        }
+        const wrappers = [
+            'ephemeralMessage',
+            'viewOnceMessage',
+            'viewOnceMessageV2',
+            'documentWithCaptionMessage',
+            'message',
+            'content'
+        ]
 
-        if (value.viewOnceMessage) {
-            scan(value.viewOnceMessage, depth + 1)
-        }
-
-        if (value.viewOnceMessageV2) {
-            scan(value.viewOnceMessageV2, depth + 1)
-        }
-
-        if (value.documentWithCaptionMessage) {
-            scan(value.documentWithCaptionMessage, depth + 1)
-        }
-
-        if (value.message) {
-            scan(value.message, depth + 1)
-        }
-
-        if (value.content) {
-            scan(value.content, depth + 1)
+        for (const key of wrappers) {
+            if (value[key]) {
+                scan(value[key], depth + 1)
+            }
         }
     }
 
     scan(message)
 
-    // Audio dentro del propio StickerMessage
-    const direct = audios.find(item => item.sticker && item.audio)
+    const direct = audios.find(
+        item => item.sticker && item.audio
+    )
 
     if (direct) return direct
 
-    // Audio separado dentro del envoltorio especial
     if (hasAudioStickerWrapper && stickers.length === 1) {
         const audio = audios.find(item => item.audio)?.audio
 
@@ -203,7 +267,7 @@ function findSoundSticker(message) {
 }
 
 // ========================================
-// DESCARGAR WEBP
+// DESCARGAR STICKER
 // ========================================
 
 async function downloadSticker(sticker) {
@@ -273,11 +337,17 @@ handler.run = async (sock, m, args = []) => {
         }, { quoted: m })
     }
 
+    // Mostrar estructura real recibida por Baileys
+    debugMessage(quoted)
+
     const sound = findSoundSticker(quoted)
 
     if (!sound) {
         return sock.sendMessage(from, {
-            text: '❌ No pude detectar el audio de ese sticker.\n\nAsegúrate de responder directamente al sticker con sonido creado con *.sa*.'
+            text:
+                '❌ No pude detectar el audio de ese sticker.\n\n' +
+                'Asegúrate de responder directamente al sticker creado con *.sa*.\n\n' +
+                '📋 Se guardó la estructura del mensaje en la consola de Pepe Bot.'
         }, { quoted: m })
     }
 
@@ -318,14 +388,12 @@ handler.run = async (sock, m, args = []) => {
         const img = new webp.Image()
         await img.load(input)
 
-        // Cambiar EXIF sin modificar los fotogramas
         img.exif = createExif(texto, id)
 
         await img.save(output)
 
         const resultado = fs.readFileSync(output)
 
-        // Preparar el sticker modificado
         const prepared = await prepareWAMessageMedia(
             { sticker: resultado },
             {
@@ -337,7 +405,6 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No se pudo preparar el sticker.')
         }
 
-        // Adjuntar el audio original
         prepared.stickerMessage.audioMessage = audio
 
         const message = {
@@ -365,7 +432,8 @@ handler.run = async (sock, m, args = []) => {
         console.error('Error en .wm2:', error)
 
         await sock.sendMessage(from, {
-            text: '❌ Error al modificar el sticker con audio.\n\n' +
+            text:
+                '❌ Error al modificar el sticker con audio.\n\n' +
                 `Detalles: ${error.message}`
         }, { quoted: m })
 
@@ -381,7 +449,7 @@ handler.run = async (sock, m, args = []) => {
 }
 
 handler.command = ['wm2']
-handler.help = ['wm2 <stickers con audio>']
+handler.help = ['wm2']
 handler.tags = ['stickers']
 handler.menu = true
 
