@@ -1,6 +1,12 @@
 
 import axios from 'axios'
 
+import {
+    proto,
+    prepareWAMessageMedia,
+    generateWAMessageFromContent
+} from '@whiskeysockets/baileys'
+
 const API_URL = 'https://api-faa.my.id/faa/pinterest?q='
 const MAX_IMAGES = 10
 
@@ -13,7 +19,7 @@ handler.run = async (sock, m, args = []) => {
     if (!query) {
         return sock.sendMessage(chat, {
             text:
-                '🐸 *PEPE BOT — PINTEREST*\n\n' +
+                '🐸 *PEPE BOT — PINTEREST* 💚\n\n' +
                 '📌 Escribe qué imágenes quieres buscar.\n\n' +
                 '✨ *Ejemplo:* .pin ranitas aesthetic'
         }, { quoted: m })
@@ -40,7 +46,7 @@ handler.run = async (sock, m, args = []) => {
             !Array.isArray(data.result) ||
             !data.result.length
         ) {
-            throw new Error('La API no encontró imágenes.')
+            throw new Error('No se encontraron imágenes.')
         }
 
         const urls = [
@@ -56,8 +62,8 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No hay imágenes válidas.')
         }
 
-        // Descargar las imágenes antes de crear el álbum
-        const imagenes = []
+        // Descargar y preparar las imágenes
+        const cards = []
 
         for (const url of urls) {
             try {
@@ -70,94 +76,114 @@ handler.run = async (sock, m, args = []) => {
 
                 if (!buffer.length) continue
 
-                imagenes.push(buffer)
+                const media = await prepareWAMessageMedia(
+                    { image: buffer },
+                    {
+                        upload: sock.waUploadToServer
+                    }
+                )
+
+                if (!media?.imageMessage) continue
+
+                cards.push({
+                    header: {
+                        title: '🐸 PEPE BOT',
+                        hasMediaAttachment: true,
+                        imageMessage: media.imageMessage
+                    },
+
+                    body: {
+                        text:
+                            '🎶 Pinterest\n\n' +
+                            '🎤 Autor: No disponible\n' +
+                            `🖼️ Imagen: ${cards.length + 1}/${urls.length}`
+                    },
+
+                    footer: {
+                        text: '💚 Pepe Pinterest 💚'
+                    }
+                })
 
             } catch (error) {
                 console.error(
-                    '[PEPE PIN] Error descargando imagen:',
+                    '[PEPE PIN] Error preparando imagen:',
                     error.message
                 )
             }
         }
 
-        if (!imagenes.length) {
-            throw new Error('No se pudieron descargar las imágenes.')
+        if (!cards.length) {
+            throw new Error('No se pudieron preparar las imágenes.')
         }
 
-        // Encabezado de búsqueda
-        await sock.sendMessage(chat, {
-            text:
-                '💙 *MIKU · PINTEREST* 💙\n\n' +
-                'Desliza y disfruta~ 🎶\n\n' +
-                `🎧 *Búsqueda:* ${query}\n` +
-                `🎶 *Resultados:* ${imagenes.length} imágenes\n\n` +
-                'Desliza para ver todas~'
-        }, { quoted: m })
-
-        let enviadas = 0
-
-        // Una sola imagen no necesita álbum
-        if (imagenes.length === 1) {
-            await sock.sendMessage(chat, {
-                image: imagenes[0],
+        // Una sola imagen: enviar normalmente
+        if (cards.length === 1) {
+            const media = await sock.sendMessage(chat, {
+                image: urls[0],
                 caption:
-                    '🎶 *Pinterest*\n\n' +
-                    '🎤 Autor: No disponible\n' +
-                    '🖼️ Imagen: 1/1\n\n' +
-                    '💙 *Pepe Pinterest* 💙'
-            })
+                    '🐸 *PEPE BOT — PINTEREST* 💚\n\n' +
+                    `🔎 Búsqueda: ${query}\n` +
+                    '🖼️ Imagen: 1/1'
+            }, { quoted: m })
 
-            enviadas = 1
+            if (!media) {
+                throw new Error('No se pudo enviar la imagen.')
+            }
 
         } else {
-            // Crear contenedor del álbum
-            const album = await sock.sendMessage(chat, {
-                album: {
-                    expectedImageCount: imagenes.length,
-                    expectedVideoCount: 0
+            // Crear carrusel horizontal
+            const interactiveMessage =
+                proto.Message.InteractiveMessage.fromObject({
+                    body: {
+                        text:
+                            '💚 *PEPE BOT — PINTEREST* 💚\n\n' +
+                            'Desliza y disfruta~ ✨\n\n' +
+                            `🔎 Búsqueda: ${query}\n` +
+                            `🖼️ Resultados: ${cards.length} imágenes\n\n` +
+                            'Desliza para ver todas~'
+                    },
+
+                    footer: {
+                        text: '🐸 PEPE BOT'
+                    },
+
+                    carouselMessage: {
+                        cards,
+                        messageVersion: 1
+                    }
+                })
+
+            const message = generateWAMessageFromContent(
+                chat,
+                {
+                    viewOnceMessage: {
+                        message: {
+                            messageContextInfo: {
+                                deviceListMetadata: {},
+                                deviceListMetadataVersion: 2
+                            },
+                            interactiveMessage
+                        }
+                    }
+                },
+                {
+                    userJid: sock.user?.id,
+                    quoted: m
                 }
-            })
+            )
 
-            if (!album?.key) {
-                throw new Error('Baileys no creó el contenedor del álbum.')
-            }
-
-            // Vincular cada imagen al mismo álbum
-            for (let i = 0; i < imagenes.length; i++) {
-                try {
-                    await sock.sendMessage(chat, {
-                        image: imagenes[i],
-
-                        caption:
-                            '🎶 *Pinterest*\n\n' +
-                            '🎤 Autor: No disponible\n' +
-                            `🖼️ Imagen: ${i + 1}/${imagenes.length}\n\n` +
-                            '💙 *Pepe Pinterest* 💙',
-
-                        albumParentKey: album.key
-                    })
-
-                    enviadas++
-
-                } catch (error) {
-                    console.error(
-                        `[PEPE PIN] Error en imagen ${i + 1}:`,
-                        error.message
-                    )
+            await sock.relayMessage(
+                chat,
+                message.message,
+                {
+                    messageId: message.key.id
                 }
-            }
+            )
         }
-
-        await sock.sendMessage(chat, {
-            text:
-                '💙 *PINTEREST FINALIZADO* 💙\n\n' +
-                `🖼️ Imágenes enviadas: ${enviadas}/${imagenes.length}\n\n` +
-                '🐸 *PEPE BOT*'
-        })
 
         await sock.sendMessage(chat, {
             react: {
-                text: enviadas ? '✅' : '❌',
+                text: '✅',
                 key: m.key
             }
         }).catch(() => {})
@@ -166,14 +192,17 @@ handler.run = async (sock, m, args = []) => {
         console.error('[PEPE PIN]', error)
 
         await sock.sendMessage(chat, {
-            react: { text: '❌', key: m.key }
+            react: {
+                text: '❌',
+                key: m.key
+            }
         }).catch(() => {})
 
         await sock.sendMessage(chat, {
             text:
-                '❌ *No se pudieron enviar los resultados.*\n\n' +
-                `Detalle: ${error.message}\n\n` +
-                'Comprueba que tu versión de Baileys admita álbumes.'
+                '❌ *PEPE BOT — PINTEREST*\n\n' +
+                'No se pudo crear el carrusel.\n\n' +
+                `Detalle: ${error.message}`
         }, { quoted: m }).catch(() => {})
     }
 }
