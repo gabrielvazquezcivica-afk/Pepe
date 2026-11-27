@@ -159,11 +159,8 @@ handler.run = async (sock, m) => {
         // Enviar foto filtrada
         await sock.sendMessage(chat, {
             image: imagenFinal,
-            caption:
-                `🌈 *FOTO DE PERFIL*\n\n` +
-                `👤 Usuario: ${nombre}\n\n` +
-                `😂 Miren a este fan profesional del arcoíris`,
-            mentions: [objetivo]
+           caption: `Miren a este putito @${objetivo.split('@')[0]} 🏳️‍🌈, le encanta que le arrempujen los frijoles al maricon este 😂🏳️‍🌈`,
+mentions: [objetivo]
         }, { quoted: m })
 
         // Enviar audio de Catbox
