@@ -2,32 +2,113 @@
 import axios from 'axios'
 import sharp from 'sharp'
 
-const AUDIO_CATBOX = 'https://files.catbox.moe/yt5fu9.mp4'
+const AUDIO_CATBOX = 'https://files.catbox.moe/TU_AUDIO.mp3'
 
 const handler = {}
 
+function obtenerSender(m) {
+    return m.sender ||
+        m.key?.participant ||
+        m.participant ||
+        m.key?.remoteJid
+}
+
+function extraerMensaje(m) {
+    let msg = m?.message || m?.msg || m?.key?.message || {}
+
+    while (msg) {
+        if (msg.ephemeralMessage?.message) {
+            msg = msg.ephemeralMessage.message
+            continue
+        }
+        if (msg.viewOnceMessage?.message) {
+            msg = msg.viewOnceMessage.message
+            continue
+        }
+        if (msg.viewOnceMessageV2?.message) {
+            msg = msg.viewOnceMessageV2.message
+            continue
+        }
+        break
+    }
+
+    return msg || {}
+}
+
+function obtenerContextInfo(m) {
+    const mensaje = extraerMensaje(m)
+
+    const tipos = [
+        'extendedTextMessage',
+        'imageMessage',
+        'videoMessage',
+        'documentMessage',
+        'audioMessage',
+        'stickerMessage'
+    ]
+
+    for (const tipo of tipos) {
+        if (mensaje[tipo]?.contextInfo) {
+            return mensaje[tipo].contextInfo
+        }
+    }
+
+    return null
+}
+
+function obtenerObjetivo(m) {
+    const sender = obtenerSender(m)
+    const contextInfo = obtenerContextInfo(m)
+
+    const menciones = [
+        ...(Array.isArray(m.mentionedJid) ? m.mentionedJid : []),
+        ...(Array.isArray(contextInfo?.mentionedJid)
+            ? contextInfo.mentionedJid
+            : [])
+    ]
+
+    const mencionado = menciones.find(jid => jid && jid !== sender)
+
+    if (mencionado) return mencionado
+
+    const respondido =
+        m.quoted?.sender ||
+        m.quoted?.participant ||
+        m.quoted?.key?.participant ||
+        contextInfo?.participant
+
+    if (respondido && respondido !== sender) {
+        return respondido
+    }
+
+    return sender
+}
+
 handler.run = async (sock, m) => {
+    const chat = m.chat || m.key?.remoteJid
+    const objetivo = obtenerObjetivo(m)
+
+    if (!chat || !objetivo) return
+
     try {
-        const jid =
-            m.mentionedJid?.[0] ||
-            m.quoted?.sender ||
-            m.sender
-
-        await sock.sendMessage(m.chat, {
-            react: { text: '🌈', key: m.key }
-        })
-
         // Obtener foto de perfil
         let foto
 
         try {
-            const url = await sock.profilePictureUrl(jid, 'image')
-            const response = await axios.get(url, {
-                responseType: 'arraybuffer'
+            const url = await sock.profilePictureUrl(objetivo, 'image')
+
+            const respuesta = await axios.get(url, {
+                responseType: 'arraybuffer',
+                timeout: 20000
             })
-            foto = Buffer.from(response.data)
-        } catch {
-            return m.reply('> ❌ No pude obtener la foto de perfil.')
+
+            foto = Buffer.from(respuesta.data)
+        } catch (error) {
+            console.error('Error obteniendo foto:', error)
+
+            return sock.sendMessage(chat, {
+                text: '❌ No pude obtener la foto de perfil. Puede que no tenga una foto visible.'
+            }, { quoted: m })
         }
 
         // Preparar imagen
@@ -44,13 +125,13 @@ handler.run = async (sock, m) => {
         const width = metadata.width
         const height = metadata.height
 
-        // Filtro arcoíris
-        const rainbow = `
+        // Crear filtro arcoíris
+        const filtro = `
         <svg width="${width}" height="${height}"
-             xmlns="http://www.w3.org/2000/svg">
+        xmlns="http://www.w3.org/2000/svg">
             <defs>
                 <linearGradient id="rainbow"
-                    x1="0%" y1="0%" x2="100%" y2="100%">
+                x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stop-color="#ff0000"/>
                     <stop offset="17%" stop-color="#ff9900"/>
                     <stop offset="34%" stop-color="#ffff00"/>
@@ -61,26 +142,32 @@ handler.run = async (sock, m) => {
                 </linearGradient>
             </defs>
             <rect width="100%" height="100%"
-                fill="url(#rainbow)" opacity="0.38"/>
+            fill="url(#rainbow)" opacity="0.38"/>
         </svg>`
 
+        // Aplicar filtro
         const imagenFinal = await sharp(base)
             .composite([{
-                input: Buffer.from(rainbow),
+                input: Buffer.from(filtro),
                 blend: 'over'
             }])
             .jpeg({ quality: 90 })
             .toBuffer()
 
-        // Enviar foto con filtro
-        await sock.sendMessage(m.chat, {
+        const nombre = `@${objetivo.split('@')[0]}`
+
+        // Enviar foto filtrada
+        await sock.sendMessage(chat, {
             image: imagenFinal,
             caption:
-                '> 🌈 Miren a este fan profesional del arcoíris 😂'
+                `🌈 *FOTO DE PERFIL*\n\n` +
+                `👤 Usuario: ${nombre}\n\n` +
+                `😂 Miren a este fan profesional del arcoíris`,
+            mentions: [objetivo]
         }, { quoted: m })
 
-        // Enviar audio
-        await sock.sendMessage(m.chat, {
+        // Enviar audio de Catbox
+        await sock.sendMessage(chat, {
             audio: { url: AUDIO_CATBOX },
             mimetype: 'audio/mpeg',
             ptt: false
@@ -88,7 +175,10 @@ handler.run = async (sock, m) => {
 
     } catch (error) {
         console.error('Error en gay2:', error)
-        m.reply('> ❌ Ocurrió un error al ejecutar el comando.')
+
+        await sock.sendMessage(chat, {
+            text: '❌ Ocurrió un error al ejecutar el comando.'
+        }, { quoted: m })
     }
 }
 
