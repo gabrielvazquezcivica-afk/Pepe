@@ -132,54 +132,85 @@ handler.run = async (sock, m, args = []) => {
 
         } else {
             // Crear carrusel horizontal
-            const interactiveMessage =
-                proto.Message.InteractiveMessage.fromObject({
-                    body: {
-                        text:
-                            '💚 *PEPE BOT — PINTEREST* 💚\n\n' +
-                            'Desliza y disfruta~ ✨\n\n' +
-                            `🔎 Búsqueda: ${query}\n` +
-                            `🖼️ Resultados: ${cards.length} imágenes\n\n` +
-                            'Desliza para ver todas~'
-                    },
+            
+const cards = cardsPreparadas.map((card, index) =>
+    proto.Message.InteractiveMessage.fromObject({
+        header: {
+            title: '🐸 PEPE BOT',
+            hasMediaAttachment: true,
+            imageMessage: card.header.imageMessage
+        },
 
-                    footer: {
-                        text: '🐸 PEPE BOT'
-                    },
+        body: {
+            text:
+                '🎶 Pinterest\n\n' +
+                '🎤 Autor: No disponible\n' +
+                `🖼️ Imagen: ${index + 1}/${cardsPreparadas.length}`
+        },
 
-                    carouselMessage: {
-                        cards,
-                        messageVersion: 1
-                    }
-                })
+        footer: {
+            text: '💚 Pepe Pinterest 💚'
+        },
 
-            const message = generateWAMessageFromContent(
-                chat,
+        nativeFlowMessage: {
+            buttons: [
                 {
-                    viewOnceMessage: {
-                        message: {
-                            messageContextInfo: {
-                                deviceListMetadata: {},
-                                deviceListMetadataVersion: 2
-                            },
-                            interactiveMessage
-                        }
-                    }
-                },
-                {
-                    userJid: sock.user?.id,
-                    quoted: m
+                    name: 'quick_reply',
+                    buttonParamsJson: JSON.stringify({
+                        display_text: 'Ver imagen',
+                        id: `pepe_pin_${index + 1}`
+                    })
                 }
-            )
-
-            await sock.relayMessage(
-                chat,
-                message.message,
-                {
-                    messageId: message.key.id
-                }
-            )
+            ],
+            messageVersion: 1
         }
+    })
+)
+
+const interactiveMessage =
+    proto.Message.InteractiveMessage.fromObject({
+        body: {
+            text:
+                '🐸 💚 PEPE BOT — PINTEREST 💚\n\n' +
+                'Desliza y disfruta~ ✨\n\n' +
+                `🔎 Búsqueda: ${query}\n` +
+                `🖼️ Resultados: ${cards.length} imágenes`
+        },
+
+        footer: {
+            text: '🐸 PEPE BOT'
+        },
+
+        carouselMessage: {
+            cards,
+            messageVersion: 1,
+            carouselCardType: 1
+        }
+    })
+
+const message = generateWAMessageFromContent(
+    chat,
+    {
+        viewOnceMessage: {
+            message: {
+                messageContextInfo: {
+                    deviceListMetadata: {},
+                    deviceListMetadataVersion: 2
+                },
+                interactiveMessage
+            }
+        }
+    },
+    {
+        userJid: sock.user.id,
+        quoted: m
+    }
+)
+
+await sock.relayMessage(chat, message.message, {
+    messageId: message.key.id
+})
+
 
         await sock.sendMessage(chat, {
             react: {
