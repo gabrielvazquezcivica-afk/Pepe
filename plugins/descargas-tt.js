@@ -1,74 +1,144 @@
 
 import axios from 'axios'
 
-const handler = async (m, { conn, text }) => {
-  try {
-    let url = text?.trim()
+const handler = {}
 
-    if (!url && m.quoted) {
-      url = m.quoted.text || ''
-    }
+handler.run = async (sock, m, args = []) => {
+    const chat = m.chat || m.key?.remoteJid
 
-    if (!url) {
-      return m.reply('> ⚠️ Envía un enlace de TikTok.\n\n> Ejemplo: .tt https://www.tiktok.com/@usuario/video/123')
-    }
+    try {
+        let url = args.join(' ').trim()
 
-    if (!/tiktok\.com/i.test(url)) {
-      return m.reply('> ❌ El enlace debe ser de TikTok.')
-    }
+        if (!url && m.quoted) {
+            url = m.quoted.text || ''
+        }
 
-    await m.reply('> ⏳ Procesando TikTok...')
+        if (!url) {
+            return m.reply(
+                '> ⚠️ Envía un enlace de TikTok.\n\n' +
+                '> Ejemplo: .tt https://www.tiktok.com/@usuario/video/123'
+            )
+        }
 
-    const api = `https://api-faa.my.id/faa/tiktok?url=${encodeURIComponent(url)}`
-    const { data } = await axios.get(api, { timeout: 60000 })
+        if (!/tiktok\.com/i.test(url)) {
+            return m.reply('> ❌ El enlace debe ser de TikTok.')
+        }
 
-    if (!data.status || !data.result) {
-      return m.reply('> ❌ No se pudo obtener el contenido.')
-    }
+        // Reacción de búsqueda
+        await sock.sendMessage(chat, {
+            react: {
+                text: '🔎',
+                key: m.key
+            }
+        })
 
-    const r = data.result
-    const caption = `> 🎵 *TIKTOK DESCARGADO*\n\n> 👤 ${r.author?.nickname || 'Desconocido'} (@${r.author?.username || 'usuario'})\n> 📝 ${r.title || 'Sin descripción'}\n> 👁️ ${r.stats?.views || '0'} vistas\n> ❤️ ${r.stats?.likes || '0'} me gusta\n> ⏱️ ${r.duration || 'Sin duración'}`
+        const api = `https://api-faa.my.id/faa/tiktok?url=${encodeURIComponent(url)}`
 
-    // Publicación de fotos
-    if (r.type === 'image' && Array.isArray(r.data)) {
-      if (!r.data.length) {
-        return m.reply('> ❌ No se encontraron imágenes.')
-      }
+        const { data } = await axios.get(api, {
+            timeout: 60000
+        })
 
-      await conn.sendMessage(m.chat, {
-        text: `${caption}\n\n> 🖼️ Fotos: ${r.data.length}`
-      }, { quoted: m })
+        if (!data?.status || !data?.result) {
+            return m.reply('> ❌ No se pudo obtener el contenido.')
+        }
 
-      for (const image of r.data) {
-        await conn.sendMessage(m.chat, {
-          image: { url: image }
+        const r = data.result
+
+        const caption =
+            `> 🎵 *TIKTOK DESCARGADO*\n\n` +
+            `> 👤 ${r.author?.nickname || 'Desconocido'} (@${r.author?.username || 'usuario'})\n` +
+            `> 📝 ${r.title || 'Sin descripción'}\n` +
+            `> 👁️ ${r.stats?.views || '0'} vistas\n` +
+            `> ❤️ ${r.stats?.likes || '0'} me gusta\n` +
+            `> ⏱️ ${r.duration || 'Sin duración'}`
+
+        // Publicaciones de imágenes
+        if (r.type === 'image') {
+            const imagenes = Array.isArray(r.data) ? r.data : []
+
+            if (!imagenes.length) {
+                return m.reply('> ❌ No se encontraron imágenes.')
+            }
+
+            await sock.sendMessage(chat, {
+                text: `${caption}\n\n> 🖼️ Fotos: ${imagenes.length}`
+            }, { quoted: m })
+
+            for (const imagen of imagenes) {
+                const imageUrl = typeof imagen === 'string'
+                    ? imagen
+                    : imagen.url
+
+                if (!imageUrl) continue
+
+                await sock.sendMessage(chat, {
+                    image: { url: imageUrl }
+                }, { quoted: m })
+            }
+
+            await sock.sendMessage(chat, {
+                react: { text: '✅', key: m.key }
+            })
+
+            return
+        }
+
+        // Obtener video: HD > SD > principal > WM
+        const video =
+            r.alternatives?.hd ||
+            r.alternatives?.sd ||
+            r.data ||
+            r.alternatives?.selected ||
+            r.alternatives?.wm
+
+        if (!video || typeof video !== 'string') {
+            console.log('[TIKTOK] Respuesta:', JSON.stringify(data, null, 2))
+            return m.reply('> ❌ No se encontró el enlace del video.')
+        }
+
+        // Descargar video
+        const response = await axios.get(video, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0'
+            },
+            maxContentLength: 100 * 1024 * 1024
+        })
+
+        const buffer = Buffer.from(response.data)
+
+        if (!buffer.length) {
+            return m.reply('> ❌ El video llegó vacío.')
+        }
+
+        // Enviar video
+        await sock.sendMessage(chat, {
+            video: buffer,
+            mimetype: 'video/mp4',
+            caption
         }, { quoted: m })
-      }
 
-      return
+        // Reacción final
+        await sock.sendMessage(chat, {
+            react: {
+                text: '✅',
+                key: m.key
+            }
+        })
+
+    } catch (error) {
+        console.error('[PEPE TIKTOK]', error.response?.data || error.message)
+
+        await m.reply(
+            '> ❌ Ocurrió un error al descargar el TikTok.'
+        )
     }
-
-    // Video
-    const video = r.play || r.video || r.nowm || r.hdplay || r.download_url
-
-    if (!video) {
-      return m.reply('> ❌ No se encontró el video para descargar.')
-    }
-
-    await conn.sendMessage(m.chat, {
-      video: { url: video },
-      mimetype: 'video/mp4',
-      caption
-    }, { quoted: m })
-
-  } catch (error) {
-    console.error('[TIKTOK]', error)
-    m.reply('> ❌ Ocurrió un error al descargar el TikTok.')
-  }
 }
 
 handler.command = ['tt', 'tiktok']
 handler.help = ['tt <enlace>']
 handler.tags = ['descargas']
+handler.menu = true
 
 export default handler
