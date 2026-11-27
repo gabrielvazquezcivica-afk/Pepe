@@ -420,7 +420,7 @@ handler.help = Object.entries(interacciones).map(([comando, accion]) =>
   accion.duo ? `${comando} <@usuario>` : comando
 )
 
-handler.tags = ['interacciones']
+handler.tags = ['anime']
 handler.menu = true
 
 export default handler
