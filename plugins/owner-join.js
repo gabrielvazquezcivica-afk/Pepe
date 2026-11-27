@@ -11,19 +11,26 @@ const MAX_TIMEOUT = 2147483647
 async function react(sock, m, emoji) {
     try {
         await sock.sendMessage(m.chat, {
-            react: {
-                text: emoji,
-                key: m.key
-            }
+            react: { text: emoji, key: m.key }
         })
     } catch {}
 }
 
-function extractInviteCode(text) {
-    const match = text.match(
+function obtenerTexto(m, args = []) {
+    return (
+        m.text ||
+        m.body ||
+        m.message?.conversation ||
+        m.message?.extendedTextMessage?.text ||
+        args.join(' ') ||
+        ''
+    ).trim()
+}
+
+function extraerCodigo(texto) {
+    const match = texto.match(
         /(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/([0-9A-Za-z]{20,})/i
     )
-
     return match?.[1] || null
 }
 
@@ -34,11 +41,11 @@ function parseDuration(value) {
     if (!match) return undefined
 
     const amount = Number(match[1])
-    const unit = match[2].toLowerCase()
-
     if (!Number.isSafeInteger(amount) || amount <= 0) {
         return undefined
     }
+
+    const unit = match[2].toLowerCase()
 
     if (unit === 's') return amount * 1000
     if (unit === 'm') return amount * 60 * 1000
@@ -51,7 +58,6 @@ function formatDuration(ms) {
     if (ms % MES === 0) return `${ms / MES} mes(es)`
     if (ms % 60000 === 0) return `${ms / 60000} minuto(s)`
     if (ms % 1000 === 0) return `${ms / 1000} segundo(s)`
-
     return `${Math.ceil(ms / 1000)} segundos`
 }
 
@@ -59,7 +65,7 @@ function normalizeJid(jid = '') {
     return jid.split(':')[0].replace(/@s.whatsapp.net|@lid/g, '')
 }
 
-async function enviarAviso(sock, chat, text) {
+async function aviso(sock, chat, text) {
     try {
         await sock.sendMessage(chat, { text })
     } catch (error) {
@@ -67,11 +73,12 @@ async function enviarAviso(sock, chat, text) {
     }
 }
 
-async function darBienvenida(sock, groupId, groupName) {
+async function bienvenida(sock, groupId) {
     try {
         const metadata = await sock.groupMetadata(groupId)
-        const participants = metadata.participants || []
-        const mentions = participants.map(p => p.id).filter(Boolean)
+        const mentions = (metadata.participants || [])
+            .map(p => p.id)
+            .filter(Boolean)
 
         await sock.sendMessage(groupId, {
             text:
@@ -87,12 +94,10 @@ async function darBienvenida(sock, groupId, groupName) {
     }
 }
 
-// Programa la salida automática, incluso para tiempos mayores
-// al límite de setTimeout de Node.js.
 function programarSalida(sock, groupId, duration, groupName, chat) {
-    const previous = salidasProgramadas.get(groupId)
+    const anterior = salidasProgramadas.get(groupId)
 
-    if (previous?.timeout) clearTimeout(previous.timeout)
+    if (anterior?.timeout) clearTimeout(anterior.timeout)
 
     const deadline = Date.now() + duration
 
@@ -103,15 +108,15 @@ function programarSalida(sock, groupId, duration, groupName, chat) {
 
     salidasProgramadas.set(groupId, task)
 
-    const check = async () => {
+    const comprobar = async () => {
         if (salidasProgramadas.get(groupId) !== task) return
 
-        const remaining = deadline - Date.now()
+        const restante = deadline - Date.now()
 
-        if (remaining > 0) {
+        if (restante > 0) {
             task.timeout = setTimeout(
-                check,
-                Math.min(remaining, MAX_TIMEOUT)
+                comprobar,
+                Math.min(restante, MAX_TIMEOUT)
             )
             return
         }
@@ -119,23 +124,21 @@ function programarSalida(sock, groupId, duration, groupName, chat) {
         try {
             await sock.groupLeave(groupId)
 
-            await enviarAviso(
+            await aviso(
                 sock,
                 chat,
                 '> 👋 *PEPE BOT SALIÓ DEL GRUPO*\n\n' +
                 `> 👥 *Grupo:* ${groupName}\n` +
-                '> ⏰ El tiempo de permanencia terminó.\n' +
-                '> 🐸 ¡Gracias por recibirnos!'
+                '> ⏰ El tiempo de permanencia terminó.'
             )
         } catch (error) {
             console.error('[JOIN] Error al salir:', error)
 
-            await enviarAviso(
+            await aviso(
                 sock,
                 chat,
                 '> ❌ No pude salir automáticamente de:\n' +
-                `> *${groupName}*\n\n` +
-                '> Puede que haya ocurrido un error de conexión.'
+                `> *${groupName}*`
             )
         } finally {
             if (salidasProgramadas.get(groupId) === task) {
@@ -145,28 +148,33 @@ function programarSalida(sock, groupId, duration, groupName, chat) {
     }
 
     task.timeout = setTimeout(
-        check,
+        comprobar,
         Math.min(duration, MAX_TIMEOUT)
     )
 }
 
-// Se ejecuta cuando WhatsApp confirma que el bot ya está dentro.
 async function procesarEntrada(sock, groupId) {
     const pending = solicitudesPendientes.get(groupId)
+
     if (!pending || pending.procesado) return
 
     pending.procesado = true
     solicitudesPendientes.delete(groupId)
 
-    await enviarAviso(
+    await aviso(
         sock,
         pending.chat,
         '> ✅ *¡PEPE BOT FUE ACEPTADO!*\n\n' +
         `> 👥 *Grupo:* ${pending.groupName}\n` +
-        '> 🐸 Un administrador aprobó la solicitud y ya estoy dentro.'
+        '> 🐸 Un administrador aprobó la solicitud y ya estoy dentro.\n' +
+        (
+            pending.duration
+                ? `> ⏰ Permanencia: ${formatDuration(pending.duration)}`
+                : '> ♾️ Permanencia: Permanente'
+        )
     )
 
-    await darBienvenida(sock, groupId, pending.groupName)
+    await bienvenida(sock, groupId)
 
     if (pending.duration) {
         programarSalida(
@@ -176,37 +184,29 @@ async function procesarEntrada(sock, groupId) {
             pending.groupName,
             pending.chat
         )
-
-        await enviarAviso(
-            sock,
-            pending.chat,
-            '> ⏰ *SALIDA PROGRAMADA*\n\n' +
-            `> PEPE BOT permanecerá ${formatDuration(pending.duration)} en el grupo.`
-        )
     }
 }
 
-// Registra el evento una sola vez por conexión.
 function registrarEventos(sock) {
     if (eventosRegistrados.has(sock)) return
 
     eventosRegistrados.add(sock)
 
-    sock.ev.on('group-participants.update', async (update) => {
+    sock.ev.on('group-participants.update', async update => {
         try {
             if (update.action !== 'add') return
 
             const botId = normalizeJid(sock.user?.id)
 
-            const botFueAgregado = (update.participants || []).some(
+            const agregado = (update.participants || []).some(
                 participant => normalizeJid(participant) === botId
             )
 
-            if (!botFueAgregado) return
+            if (!agregado) return
 
             await procesarEntrada(sock, update.id)
         } catch (error) {
-            console.error('[JOIN] Error detectando aprobación:', error)
+            console.error('[JOIN] Error detectando entrada:', error)
         }
     })
 }
@@ -221,10 +221,8 @@ handler.run = async (sock, m, args = []) => {
         )
     }
 
-    const input = args.join(' ').trim()
-    const partes = input.split(/\s+/)
-
-    const inviteCode = extractInviteCode(input)
+    const input = obtenerTexto(m, args)
+    const inviteCode = extraerCodigo(input)
 
     if (!inviteCode) {
         await react(sock, m, '⚠️')
@@ -241,15 +239,19 @@ handler.run = async (sock, m, args = []) => {
             '> `s` = segundos\n' +
             '> `m` = minutos\n' +
             '> `mes` = meses\n\n' +
-            '> Si no indicas tiempo, permaneceré indefinidamente.'
+            '> ♾️ Si no indicas tiempo, la entrada será permanente.'
         )
     }
 
-    // El tiempo se toma del texto posterior al enlace.
+    // Extraer únicamente el texto que aparece después del enlace.
     const textoTiempo = input
-        .replace(/(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/[0-9A-Za-z]{20,}/i, '')
+        .replace(
+            /(?:https?:\/\/)?(?:www\.)?chat\.whatsapp\.com\/[0-9A-Za-z]{20,}/i,
+            ''
+        )
         .trim()
 
+    // Sin tiempo = permanente.
     const duration = textoTiempo
         ? parseDuration(textoTiempo)
         : null
@@ -259,10 +261,8 @@ handler.run = async (sock, m, args = []) => {
 
         return m.reply(
             '> ⚠️ *TIEMPO NO VÁLIDO*\n\n' +
-            '> Utiliza alguno de estos formatos:\n' +
-            '> `2s` — 2 segundos\n' +
-            '> `5m` — 5 minutos\n' +
-            '> `3mes` — 3 meses'
+            '> Utiliza `2s`, `5m` o `3mes`.\n' +
+            '> Si no colocas tiempo, PEPE BOT ingresará permanentemente.'
         )
     }
 
@@ -273,7 +273,6 @@ handler.run = async (sock, m, args = []) => {
     try {
         registrarEventos(sock)
 
-        // Obtener información del grupo antes de intentar entrar.
         const invite = await sock.groupGetInviteInfo(inviteCode)
 
         const groupId = invite.id
@@ -283,16 +282,13 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No se pudo obtener el ID del grupo.')
         }
 
-        // Guardar los datos antes de solicitar la entrada.
-        // Así no se pierde la aprobación si llega inmediatamente.
-        const pending = {
+        // Guardar antes de solicitar la entrada.
+        solicitudesPendientes.set(groupId, {
             chat,
             groupName,
             duration,
             procesado: false
-        }
-
-        solicitudesPendientes.set(groupId, pending)
+        })
 
         try {
             const result = await sock.groupAcceptInvite(inviteCode)
@@ -301,38 +297,49 @@ handler.run = async (sock, m, args = []) => {
                 throw new Error('WhatsApp no confirmó la entrada.')
             }
 
-            // Si la entrada fue inmediata, procesarla.
             await procesarEntrada(sock, result)
 
             await react(sock, m, '✅')
 
-        } catch (error) {
-            // Si WhatsApp requiere aprobación, conservamos la solicitud.
-            // La entrada se detectará mediante group-participants.update.
-            const status = error?.output?.statusCode || error?.data
+            await aviso(
+                sock,
+                chat,
+                '> ✅ *PEPE BOT SE UNIÓ CORRECTAMENTE*\n\n' +
+                `> 👥 *Grupo:* ${groupName}\n` +
+                `> 🆔 *ID:* ${result}\n` +
+                (
+                    duration
+                        ? `> ⏰ *Permanencia:* ${formatDuration(duration)}`
+                        : '> ♾️ *Permanencia:* Permanente'
+                )
+            )
 
-            if (
-                status === 401 ||
-                status === 403 ||
-                status === 404
-            ) {
+        } catch (error) {
+            const status =
+                error?.output?.statusCode ||
+                error?.data
+
+            if ([401, 403, 404].includes(status)) {
                 solicitudesPendientes.delete(groupId)
                 throw error
             }
 
+            // Se conserva la solicitud para detectar la aprobación.
             await react(sock, m, '⏳')
 
-            await enviarAviso(
+            await aviso(
                 sock,
                 chat,
                 '> ⏳ *SOLICITUD DE ENTRADA PENDIENTE*\n\n' +
                 `> 👥 *Grupo:* ${groupName}\n\n` +
                 '> Este grupo requiere que un administrador apruebe la solicitud.\n' +
                 '> 🐸 PEPE BOT está esperando la aprobación.\n\n' +
-                '> 💚 Cuando un administrador me acepte, detectaré mi entrada y enviaré el aviso automáticamente.' +
-                (duration
-                    ? `\n\n> ⏰ *Permanencia:* ${formatDuration(duration)} desde que entre al grupo.`
-                    : '')
+                '> Cuando un administrador me acepte, detectaré mi entrada y enviaré el aviso automáticamente.\n\n' +
+                (
+                    duration
+                        ? `> ⏰ *Permanencia:* ${formatDuration(duration)} desde que entre.`
+                        : '> ♾️ *Permanencia:* Permanente.'
+                )
             )
 
             return
@@ -345,7 +352,9 @@ handler.run = async (sock, m, args = []) => {
 
         let reason = 'No se pudo entrar al grupo.'
 
-        const status = error?.output?.statusCode || error?.data
+        const status =
+            error?.output?.statusCode ||
+            error?.data
 
         if (status === 401 || status === 404) {
             reason = 'El enlace puede ser inválido, haber caducado o haber sido revocado.'
