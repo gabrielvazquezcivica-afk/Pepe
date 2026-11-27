@@ -2,7 +2,7 @@
 import axios from 'axios'
 import sharp from 'sharp'
 
-const AUDIO_CATBOX = 'https://files.catbox.moe/TU_AUDIO.mp3'
+const AUDIO_CATBOX = 'https://files.catbox.moe/yt5fu9.mp4'
 
 const handler = {}
 
