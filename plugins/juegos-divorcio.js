@@ -80,7 +80,7 @@ handler.run = async (sock, m) => {
 }
 
 handler.command = ['divorcio']
-//handler.help = ['divorcio']
+handler.help = ['divorcio']
 handler.tags = ['juegos']
 handler.menu = true
 
