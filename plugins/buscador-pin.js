@@ -30,12 +30,17 @@ handler.run = async (sock, m, args = []) => {
     }).catch(() => {})
 
     try {
-        // Buscar imágenes
+        // =================================
+        // BUSCAR IMÁGENES
+        // =================================
+
         const response = await axios.get(
             API_URL + encodeURIComponent(query),
             {
                 timeout: 60000,
-                headers: { Accept: 'application/json' }
+                headers: {
+                    Accept: 'application/json'
+                }
             }
         )
 
@@ -46,7 +51,7 @@ handler.run = async (sock, m, args = []) => {
             !Array.isArray(data.result) ||
             !data.result.length
         ) {
-            throw new Error('No se encontraron imágenes.')
+            throw new Error('La API no encontró imágenes.')
         }
 
         const urls = [
@@ -62,8 +67,11 @@ handler.run = async (sock, m, args = []) => {
             throw new Error('No hay imágenes válidas.')
         }
 
-        // Descargar y preparar las imágenes
-        const cards = []
+        // =================================
+        // DESCARGAR Y PREPARAR IMÁGENES
+        // =================================
+
+        const imagenes = []
 
         for (const url of urls) {
             try {
@@ -76,141 +84,186 @@ handler.run = async (sock, m, args = []) => {
 
                 if (!buffer.length) continue
 
+                imagenes.push(buffer)
+
+            } catch (error) {
+                console.error(
+                    '[PEPE PIN] Error descargando imagen:',
+                    error.message
+                )
+            }
+        }
+
+        if (!imagenes.length) {
+            throw new Error('No se pudieron descargar las imágenes.')
+        }
+
+        // =================================
+        // PREPARAR TARJETAS
+        // =================================
+
+        const cards = []
+
+        for (let i = 0; i < imagenes.length; i++) {
+            try {
                 const media = await prepareWAMessageMedia(
-                    { image: buffer },
+                    {
+                        image: imagenes[i]
+                    },
                     {
                         upload: sock.waUploadToServer
                     }
                 )
 
-                if (!media?.imageMessage) continue
+                if (!media?.imageMessage) {
+                    throw new Error('No se pudo preparar la imagen.')
+                }
 
-                cards.push({
-                    header: {
-                        title: '🐸 PEPE BOT',
-                        hasMediaAttachment: true,
-                        imageMessage: media.imageMessage
-                    },
+                cards.push(
+                    proto.Message.InteractiveMessage.NativeFlowMessage.fromObject
+                        ? proto.Message.InteractiveMessage.CarouselMessage.Card.fromObject({
+                            header: {
+                                title: '🐸 PEPE BOT',
+                                hasMediaAttachment: true,
+                                ...media
+                            },
 
-                    body: {
-                        text:
-                            '🎶 Pinterest\n\n' +
-                            '🎤 Autor: No disponible\n' +
-                            `🖼️ Imagen: ${cards.length + 1}/${urls.length}`
-                    },
+                            body: {
+                                text:
+                                    '🎶 Pinterest\n\n' +
+                                    '🎤 Autor: No disponible\n' +
+                                    `🖼️ Imagen: ${i + 1}/${imagenes.length}`
+                            },
 
-                    footer: {
-                        text: '💚 Pepe Pinterest 💚'
-                    }
-                })
+                            footer: {
+                                text: '💚 Pepe Pinterest 💚'
+                            },
+
+                            nativeFlowMessage: {
+                                buttons: []
+                            }
+                        })
+                        : {
+                            header: {
+                                title: '🐸 PEPE BOT',
+                                hasMediaAttachment: true,
+                                ...media
+                            },
+
+                            body: {
+                                text:
+                                    '🎶 Pinterest\n\n' +
+                                    '🎤 Autor: No disponible\n' +
+                                    `🖼️ Imagen: ${i + 1}/${imagenes.length}`
+                            },
+
+                            footer: {
+                                text: '💚 Pepe Pinterest 💚'
+                            },
+
+                            nativeFlowMessage: {
+                                buttons: []
+                            }
+                        }
+                )
 
             } catch (error) {
                 console.error(
-                    '[PEPE PIN] Error preparando imagen:',
+                    `[PEPE PIN] Error preparando tarjeta ${i + 1}:`,
                     error.message
                 )
             }
         }
 
         if (!cards.length) {
-            throw new Error('No se pudieron preparar las imágenes.')
+            throw new Error('No se pudieron preparar las tarjetas.')
         }
 
-        // Una sola imagen: enviar normalmente
+        // =================================
+        // ENVIAR UNA SOLA IMAGEN
+        // =================================
+
         if (cards.length === 1) {
-            const media = await sock.sendMessage(chat, {
-                image: urls[0],
+            const media = await prepareWAMessageMedia(
+                { image: imagenes[0] },
+                { upload: sock.waUploadToServer }
+            )
+
+            await sock.sendMessage(chat, {
+                image: imagenes[0],
                 caption:
                     '🐸 *PEPE BOT — PINTEREST* 💚\n\n' +
                     `🔎 Búsqueda: ${query}\n` +
                     '🖼️ Imagen: 1/1'
             }, { quoted: m })
 
-            if (!media) {
-                throw new Error('No se pudo enviar la imagen.')
-            }
-
         } else {
-            // Crear carrusel horizontal
-            
-const cards = cardsPreparadas.map((card, index) =>
-    proto.Message.InteractiveMessage.fromObject({
-        header: {
-            title: '🐸 PEPE BOT',
-            hasMediaAttachment: true,
-            imageMessage: card.header.imageMessage
-        },
 
-        body: {
-            text:
-                '🎶 Pinterest\n\n' +
-                '🎤 Autor: No disponible\n' +
-                `🖼️ Imagen: ${index + 1}/${cardsPreparadas.length}`
-        },
+            // =================================
+            // CREAR CARRUSEL HORIZONTAL
+            // =================================
 
-        footer: {
-            text: '💚 Pepe Pinterest 💚'
-        },
+            const interactiveMessage =
+                proto.Message.InteractiveMessage.fromObject({
+                    body: {
+                        text:
+                            '💚 *PEPE BOT — PINTEREST* 💚\n\n' +
+                            'Desliza y disfruta~ ✨\n\n' +
+                            `🔎 Búsqueda: ${query}\n` +
+                            `🖼️ Resultados: ${cards.length} imágenes\n\n` +
+                            'Desliza para ver todas~'
+                    },
 
-        nativeFlowMessage: {
-            buttons: [
+                    footer: {
+                        text: '🐸 PEPE BOT'
+                    },
+
+                    header: {
+                        title: 'Pinterest',
+                        hasMediaAttachment: false
+                    },
+
+                    carouselMessage: {
+                        cards,
+                        messageVersion: 1
+                    }
+                })
+
+            const message = generateWAMessageFromContent(
+                chat,
                 {
-                    name: 'quick_reply',
-                    buttonParamsJson: JSON.stringify({
-                        display_text: 'Ver imagen',
-                        id: `pepe_pin_${index + 1}`
-                    })
-                }
-            ],
-            messageVersion: 1
-        }
-    })
-)
-
-const interactiveMessage =
-    proto.Message.InteractiveMessage.fromObject({
-        body: {
-            text:
-                '🐸 💚 PEPE BOT — PINTEREST 💚\n\n' +
-                'Desliza y disfruta~ ✨\n\n' +
-                `🔎 Búsqueda: ${query}\n` +
-                `🖼️ Resultados: ${cards.length} imágenes`
-        },
-
-        footer: {
-            text: '🐸 PEPE BOT'
-        },
-
-        carouselMessage: {
-            cards,
-            messageVersion: 1,
-            carouselCardType: 1
-        }
-    })
-
-const message = generateWAMessageFromContent(
-    chat,
-    {
-        viewOnceMessage: {
-            message: {
-                messageContextInfo: {
-                    deviceListMetadata: {},
-                    deviceListMetadataVersion: 2
+                    viewOnceMessage: {
+                        message: {
+                            messageContextInfo: {
+                                deviceListMetadata: {},
+                                deviceListMetadataVersion: 2
+                            },
+                            interactiveMessage
+                        }
+                    }
                 },
-                interactiveMessage
+                {
+                    userJid: sock.user.id,
+                    quoted: m
+                }
+            )
+
+            if (!message?.message || !message?.key?.id) {
+                throw new Error('No se pudo generar el mensaje del carrusel.')
             }
+
+            await sock.relayMessage(
+                chat,
+                message.message,
+                {
+                    messageId: message.key.id
+                }
+            )
         }
-    },
-    {
-        userJid: sock.user.id,
-        quoted: m
-    }
-)
 
-await sock.relayMessage(chat, message.message, {
-    messageId: message.key.id
-})
-
+        // =================================
+        // FINALIZAR
+        // =================================
 
         await sock.sendMessage(chat, {
             react: {
@@ -220,7 +273,7 @@ await sock.relayMessage(chat, message.message, {
         }).catch(() => {})
 
     } catch (error) {
-        console.error('[PEPE PIN]', error)
+        console.error('[PEPE PIN ERROR]', error)
 
         await sock.sendMessage(chat, {
             react: {
@@ -232,8 +285,8 @@ await sock.relayMessage(chat, message.message, {
         await sock.sendMessage(chat, {
             text:
                 '❌ *PEPE BOT — PINTEREST*\n\n' +
-                'No se pudo crear el carrusel.\n\n' +
-                `Detalle: ${error.message}`
+                'No se pudo enviar el carrusel.\n\n' +
+                `📌 Error: ${error.message}`
         }, { quoted: m }).catch(() => {})
     }
 }
